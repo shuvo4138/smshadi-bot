@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
-BOT_TOKEN = os.getenv("8609781731:AAEZzctHzmLndplCWf0XhuY9RyJvRoTLAfk", "")
+BOT_TOKEN = os.getenv(" ", "")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365"))
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518"))
 JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours")
