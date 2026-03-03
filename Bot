@@ -5,20 +5,30 @@ import io
 import csv
 import random
 import requests
+import os
 from datetime import datetime
+from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+
+# Load environment variables
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = "8609781731:AAEZzctHzmLndplCWf0XhuY9RyJvRoTLAfk"
-ADMIN_ID = 1984916365
-OTP_CHANNEL_ID = -1002625886518
-JOIN_CHANNEL = "https://t.me/alwaysrvice24hours"
-DASHBOARD_BASE = "http://185.2.83.39/ints/agent/SMSDashboard"
-DASHBOARD_USER = "shuvo098"
-DASHBOARD_PASS = "Shuvo.99@@"
+# Configuration from environment variables
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365"))
+OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518"))
+JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours")
+DASHBOARD_BASE = os.getenv("DASHBOARD_BASE", "http://185.2.83.39/ints/agent/SMSDashboard")
+DASHBOARD_USER = os.getenv("DASHBOARD_USER", "")
+DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "")
+
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN is not set in environment variables!")
+    exit(1)
 
 numbers_pool = []
 user_numbers = {}
