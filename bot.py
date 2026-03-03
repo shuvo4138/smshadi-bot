@@ -8,16 +8,14 @@ import requests
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
-# Load environment variables
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration from environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
@@ -27,11 +25,9 @@ DASHBOARD_USER = os.getenv("DASHBOARD_USER", "").strip()
 DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "").strip()
 
 logger.info(f"BOT_TOKEN length: {len(BOT_TOKEN)}")
-logger.info(f"ADMIN_ID: {ADMIN_ID}")
-logger.info(f"OTP_CHANNEL_ID: {OTP_CHANNEL_ID}")
 
 if not BOT_TOKEN:
-    logger.error("BOT_TOKEN is not set in environment variables!")
+    logger.error("BOT_TOKEN is not set!")
     import time
     time.sleep(10)
     exit(1)
@@ -40,6 +36,18 @@ numbers_pool = []
 user_numbers = {}
 otp_cache = {}
 session_cookie = None
+
+def get_user_keyboard(user_id):
+    if user_id == ADMIN_ID:
+        return ReplyKeyboardMarkup([
+            [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
+            [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
+            [KeyboardButton("👑 Admin Panel")]
+        ], resize_keyboard=True)
+    return ReplyKeyboardMarkup([
+        [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
+        [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
+    ], resize_keyboard=True)
 
 def login_dashboard():
     global session_cookie
@@ -53,7 +61,7 @@ def login_dashboard():
         )
         if "PHPSESSID" in session.cookies:
             session_cookie = session.cookies["PHPSESSID"]
-            logger.info(f"Login success: {session_cookie}")
+            logger.info(f"Login success")
             return session_cookie
     except Exception as e:
         logger.error(f"Login error: {e}")
@@ -174,7 +182,7 @@ async def poll_otps(context):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    keyboard = [
+    inline_keyboard = [
         [InlineKeyboardButton("📲 Number নিন", callback_data="get_number")],
         [InlineKeyboardButton("🔍 OTP Check করুন", callback_data="check_otp")],
         [InlineKeyboardButton("📢 OTP Channel", url=JOIN_CHANNEL)],
@@ -182,8 +190,91 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 স্বাগতম {user.first_name}!\n\n🤖 *SMS Hadi OTP Bot*\n\nMyanmar number নিন এবং OTP receive করুন।",
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard)
     )
+    await update.message.reply_text(
+        "নিচের menu থেকে option বেছে নিন:",
+        reply_markup=get_user_keyboard(user.id)
+    )
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    user_id = update.effective_user.id
+
+    if text == "🏠 Home":
+        await start(update, context)
+
+    elif text == "📲 Get Number":
+        if not numbers_pool:
+            await update.message.reply_text("❌ এখন কোনো number নেই। Admin কে জানান।")
+            return
+        if user_id in user_numbers:
+            num = user_numbers[user_id]
+            keyboard = [
+                [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{num}")],
+                [InlineKeyboardButton("❌ Number ছেড়ে দিন", callback_data="release_number")],
+            ]
+            await update.message.reply_text(f"✅ আপনার number:\n`{num}`\n\nOTP আসলে notify করা হবে।", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+        num = get_available_number()
+        if not num:
+            await update.message.reply_text("❌ সব number busy। পরে try করুন।")
+            return
+        user_numbers[user_id] = num
+        keyboard = [
+            [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{num}")],
+            [InlineKeyboardButton("❌ Number ছেড়ে দিন", callback_data="release_number")],
+        ]
+        await update.message.reply_text(f"✅ *আপনার Number:*\n\n`{num}`\n\nOTP আসলে সাথে সাথে notify করা হবে! 🔔", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif text == "🔍 Check OTP":
+        if user_id not in user_numbers:
+            await update.message.reply_text("❌ আগে number নিন।")
+            return
+        num = user_numbers[user_id]
+        await update.message.reply_text(f"🔍 `{num}` এর OTP খুঁজছি...", parse_mode="Markdown")
+        result = fetch_otp_for_number(num)
+        if result:
+            otp_code = extract_otp(result["message"])
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
+            await update.message.reply_text(
+                f"✅ *Latest OTP:*\n\n📞 `{num}`\n🏢 From: *{result['sender']}*\n🔐 OTP: `{otp_code}`\n💬 _{result['message'][:100]}_\n🕐 {result['datetime']}",
+                parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            await update.message.reply_text(f"⏳ `{num}` এ এখনো OTP আসেনি।", parse_mode="Markdown")
+
+    elif text == "📋 My Number":
+        if user_id in user_numbers:
+            num = user_numbers[user_id]
+            keyboard = [
+                [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{num}")],
+                [InlineKeyboardButton("❌ Number ছেড়ে দিন", callback_data="release_number")],
+            ]
+            await update.message.reply_text(f"📋 আপনার number:\n`{num}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        else:
+            await update.message.reply_text("❌ আপনার কোনো number নেই। আগে number নিন।")
+
+    elif text == "👑 Admin Panel":
+        if user_id != ADMIN_ID:
+            await update.message.reply_text("❌ আপনি admin না!")
+            return
+        assigned = len(user_numbers)
+        available = len(numbers_pool) - assigned
+        keyboard = [
+            [InlineKeyboardButton("📤 Numbers Upload করুন", callback_data="admin_upload")],
+            [InlineKeyboardButton("🗑 সব Numbers Clear", callback_data="admin_clear")],
+            [InlineKeyboardButton("🔄 Re-login Dashboard", callback_data="admin_relogin")],
+        ]
+        await update.message.reply_text(
+            f"👑 *Admin Panel*\n\n"
+            f"📦 Total Numbers: {len(numbers_pool)}\n"
+            f"✅ Available: {available}\n"
+            f"👥 Assigned: {assigned}\n"
+            f"🔑 Session: {'✅' if session_cookie else '❌'}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -199,7 +290,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             num = user_numbers[user_id]
             keyboard = [
                 [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{num}")],
-                [InlineKeyboardButton("📢 OTP Channel", url=JOIN_CHANNEL)],
                 [InlineKeyboardButton("❌ Number ছেড়ে দিন", callback_data="release_number")],
             ]
             await query.edit_message_text(f"✅ আপনার number:\n`{num}`\n\nOTP আসলে notify করা হবে।", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -211,42 +301,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_numbers[user_id] = num
         keyboard = [
             [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{num}")],
-            [InlineKeyboardButton("📢 OTP Channel", url=JOIN_CHANNEL)],
             [InlineKeyboardButton("❌ Number ছেড়ে দিন", callback_data="release_number")],
         ]
         await query.edit_message_text(f"✅ *আপনার Number:*\n\n`{num}`\n\nOTP আসলে সাথে সাথে notify করা হবে! 🔔", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "check_otp":
         if user_id not in user_numbers:
-            keyboard = [[InlineKeyboardButton("📲 Number নিন", callback_data="get_number")]]
-            await query.edit_message_text("❌ আগে number নিন।", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("❌ আগে number নিন।")
             return
         num = user_numbers[user_id]
         await query.edit_message_text(f"🔍 `{num}` এর OTP খুঁজছি...", parse_mode="Markdown")
         result = fetch_otp_for_number(num)
         if result:
             otp_code = extract_otp(result["message"])
-            keyboard = [
-                [InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")],
-                [InlineKeyboardButton("📢 OTP Channel", url=JOIN_CHANNEL)],
-            ]
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
             await query.edit_message_text(
                 f"✅ *Latest OTP:*\n\n📞 `{num}`\n🏢 From: *{result['sender']}*\n🔐 OTP: `{otp_code}`\n💬 _{result['message'][:100]}_\n🕐 {result['datetime']}",
                 parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
-            keyboard = [[InlineKeyboardButton("🔄 আবার Check", callback_data="check_otp")]]
-            await query.edit_message_text(f"⏳ `{num}` এ এখনো OTP আসেনি।", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(f"⏳ `{num}` এ এখনো OTP আসেনি।", parse_mode="Markdown")
 
     elif data.startswith("refresh_"):
         num = data.replace("refresh_", "")
         result = fetch_otp_for_number(num)
         if result:
             otp_code = extract_otp(result["message"])
-            keyboard = [
-                [InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")],
-                [InlineKeyboardButton("📢 OTP Channel", url=JOIN_CHANNEL)],
-            ]
+            keyboard = [[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
             await query.edit_message_text(
                 f"✅ *Latest OTP:*\n\n📞 `{num}`\n🏢 From: *{result['sender']}*\n🔐 OTP: `{otp_code}`\n💬 _{result['message'][:100]}_\n🕐 {result['datetime']}",
                 parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
@@ -262,11 +343,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text("❌ আপনার কোনো number নেই।")
 
+    elif data == "admin_upload":
+        if user_id != ADMIN_ID:
+            return
+        await query.edit_message_text("📤 এখন একটা TXT বা CSV ফাইল পাঠান।\n\nFormat:\n```\n959655653869\n959654946028\n```", parse_mode="Markdown")
+
+    elif data == "admin_clear":
+        if user_id != ADMIN_ID:
+            return
+        numbers_pool.clear()
+        user_numbers.clear()
+        await query.edit_message_text("✅ সব numbers clear হয়েছে।")
+
+    elif data == "admin_relogin":
+        if user_id != ADMIN_ID:
+            return
+        global session_cookie
+        session_cookie = None
+        result = login_dashboard()
+        await query.edit_message_text("✅ Re-login সফল!" if result else "❌ Login failed!")
+
 async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     if not update.message.document:
-        await update.message.reply_text("📤 CSV বা TXT file পাঠান।\n\nFormat:\n```\n959655653869\n959654946028\n```", parse_mode="Markdown")
         return
     doc = update.message.document
     file = await doc.get_file()
@@ -290,37 +390,12 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     numbers_pool.extend(added)
     await update.message.reply_text(f"✅ *Upload সফল!*\n\n📥 নতুন: {len(added)}\n📦 Total: {len(numbers_pool)}", parse_mode="Markdown")
 
-async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    assigned = len(user_numbers)
-    available = len(numbers_pool) - assigned
-    text = f"📊 *Bot Statistics*\n\n📦 Total: {len(numbers_pool)}\n✅ Available: {available}\n👥 Assigned: {assigned}\n🔑 Session: {'✅' if session_cookie else '❌'}"
-    await update.message.reply_text(text, parse_mode="Markdown")
-
-async def clear_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    numbers_pool.clear()
-    user_numbers.clear()
-    await update.message.reply_text("✅ সব numbers clear হয়েছে।")
-
-async def relogin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    global session_cookie
-    session_cookie = None
-    result = login_dashboard()
-    await update.message.reply_text("✅ Re-login সফল!" if result else "❌ Login failed!")
-
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     login_dashboard()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", admin_stats))
-    app.add_handler(CommandHandler("clear", clear_numbers))
-    app.add_handler(CommandHandler("relogin", relogin_cmd))
     app.add_handler(MessageHandler(filters.Document.ALL, upload_numbers))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.job_queue.run_repeating(poll_otps, interval=15, first=5)
     logger.info("Bot starting...")
