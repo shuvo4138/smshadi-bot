@@ -6,7 +6,6 @@ import csv
 import random
 import requests
 import os
-from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -21,10 +20,8 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
 JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours").strip()
 DASHBOARD_BASE = os.getenv("DASHBOARD_BASE", "http://185.2.83.39/ints/agent/SMSDashboard").strip()
-DASHBOARD_USER = os.getenv("DASHBOARD_USER", "").strip()
-DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "").strip()
-
-logger.info(f"BOT_TOKEN length: {len(BOT_TOKEN)}")
+DASHBOARD_USER = os.getenv("DASHBOARD_USER", "shuvo098").strip()
+DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "Shuvo.99@@").strip()
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN is not set!")
@@ -35,30 +32,55 @@ if not BOT_TOKEN:
 numbers_pool = []
 user_numbers = {}
 otp_cache = {}
-
-session_cookie = "44kap8np50h7fue4dyn2tnbad1"
-
-def get_user_keyboard(user_id):
-    if user_id == ADMIN_ID:
-        return ReplyKeyboardMarkup([
-            [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
-            [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
-            [KeyboardButton("👑 Admin Panel")]
-        ], resize_keyboard=True)
-    return ReplyKeyboardMarkup([
-        [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
-        [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
-    ], resize_keyboard=True)
+session_cookie = None
 
 def login_dashboard():
     global session_cookie
-    logger.info(f"✅ Using manual session: {session_cookie[:20]}...")
-    return session_cookie
+    try:
+        session = requests.Session()
+        # Login page থেকে captcha নাও
+        resp = session.get(
+            "http://185.2.83.39/ints/login",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            timeout=10
+        )
+        # Math captcha solve করো
+        captcha_match = re.search(r'What is (\d+)\s*\+\s*(\d+)', resp.text)
+        if captcha_match:
+            a = int(captcha_match.group(1))
+            b = int(captcha_match.group(2))
+            captcha_answer = str(a + b)
+            logger.info(f"🔢 Captcha: {a} + {b} = {captcha_answer}")
+        else:
+            captcha_answer = "6"
+            logger.warning("⚠️ Captcha not found, using default 6")
+
+        # Login করো
+        login_resp = session.post(
+            "http://185.2.83.39/ints/login",
+            data={
+                "username": DASHBOARD_USER,
+                "password": DASHBOARD_PASS,
+                "captcha": captcha_answer
+            },
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            allow_redirects=True,
+            timeout=10
+        )
+        if "PHPSESSID" in session.cookies:
+            session_cookie = session.cookies["PHPSESSID"]
+            logger.info(f"✅ Auto-login success: {session_cookie[:15]}...")
+            return session_cookie
+        else:
+            logger.error(f"❌ Login failed: {login_resp.status_code} - {login_resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"❌ Login error: {e}")
+    return None
 
 def get_session():
     global session_cookie
     if not session_cookie:
-        session_cookie = "44kap8np50h7fue4dyn2tnbad1"
+        login_dashboard()
     return session_cookie
 
 def fetch_otp_for_number(number: str):
@@ -79,19 +101,27 @@ def fetch_otp_for_number(number: str):
             timeout=10
         )
         if resp.status_code == 200:
-            data = resp.json()
-            rows = data.get("aaData", [])
-            if rows:
-                latest = rows[0]
-                if len(latest) >= 6:
-                    return {
-                        "datetime": latest[0],
-                        "sender": str(latest[3] or ""),
-                        "message": str(latest[5] or ""),
-                        "number": clean_num
-                    }
+            try:
+                data = resp.json()
+                rows = data.get("aaData", [])
+                if rows:
+                    latest = rows[0]
+                    if len(latest) >= 6:
+                        return {
+                            "datetime": latest[0],
+                            "sender": str(latest[3] or ""),
+                            "message": str(latest[5] or ""),
+                            "number": clean_num
+                        }
+            except Exception:
+                pass
+        elif resp.status_code in [302, 401, 403]:
+            logger.warning("⚠️ Session expired! Re-logging in...")
+            global session_cookie
+            session_cookie = None
+            login_dashboard()
     except Exception as e:
-        logger.error(f"OTP fetch error: {e}")
+        logger.error(f"❌ OTP fetch error: {e}")
     return None
 
 def fetch_all_recent_otps():
@@ -111,10 +141,18 @@ def fetch_all_recent_otps():
             timeout=10
         )
         if resp.status_code == 200:
-            data = resp.json()
-            return data.get("aaData", [])
+            try:
+                data = resp.json()
+                return data.get("aaData", [])
+            except Exception:
+                pass
+        elif resp.status_code in [302, 401, 403]:
+            logger.warning("⚠️ Session expired! Re-logging in...")
+            global session_cookie
+            session_cookie = None
+            login_dashboard()
     except Exception as e:
-        logger.error(f"Recent OTP error: {e}")
+        logger.error(f"❌ Recent OTP error: {e}")
     return []
 
 def extract_otp(msg: str) -> str:
@@ -132,6 +170,18 @@ def get_available_number():
     assigned = set(user_numbers.values())
     available = [n for n in numbers_pool if n not in assigned]
     return random.choice(available) if available else None
+
+def get_user_keyboard(user_id):
+    if user_id == ADMIN_ID:
+        return ReplyKeyboardMarkup([
+            [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
+            [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
+            [KeyboardButton("👑 Admin Panel")]
+        ], resize_keyboard=True)
+    return ReplyKeyboardMarkup([
+        [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
+        [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
+    ], resize_keyboard=True)
 
 async def poll_otps(context):
     rows = fetch_all_recent_otps()
@@ -263,17 +313,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         assigned = len(user_numbers)
         available = len(numbers_pool) - assigned
         keyboard = [
-            [InlineKeyboardButton("📤 Numbers Upload করুন", callback_data="admin_upload")],
-            [InlineKeyboardButton("🗑 সব Numbers Clear", callback_data="admin_clear")],
-            [InlineKeyboardButton("🔄 Update Session", callback_data="admin_relogin")],
+            [InlineKeyboardButton("📤 Numbers Upload", callback_data="admin_upload")],
+            [InlineKeyboardButton("🗑 সব Clear", callback_data="admin_clear")],
+            [InlineKeyboardButton("🔄 Re-Login", callback_data="admin_relogin")],
         ]
         await update.message.reply_text(
             f"👑 *Admin Panel*\n\n"
-            f"📦 Total Numbers: {len(numbers_pool)}\n"
+            f"📦 Total: {len(numbers_pool)}\n"
             f"✅ Available: {available}\n"
             f"👥 Assigned: {assigned}\n"
-            f"🔑 Session: {'✅ Active' if session_cookie else '❌ None'}\n"
-            f"📝 Cookie: `{session_cookie[:20]}...`",
+            f"🔑 Session: {'✅ Active' if session_cookie else '❌ None'}",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -286,7 +335,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "get_number":
         if not numbers_pool:
-            await query.edit_message_text("❌ এখন কোনো number নেই। Admin কে জানান।")
+            await query.edit_message_text("❌ এখন কোনো number নেই।")
             return
         if user_id in user_numbers:
             num = user_numbers[user_id]
@@ -294,25 +343,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{num}")],
                 [InlineKeyboardButton("❌ Number ছেড়ে দিন", callback_data="release_number")],
             ]
-            await query.edit_message_text(f"✅ আপনার number:\n`{num}`\n\nOTP আসলে notify করা হবে।", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text(f"✅ আপনার number:\n`{num}`", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
             return
         num = get_available_number()
         if not num:
-            await query.edit_message_text("❌ সব number busy। পরে try করুন।")
+            await query.edit_message_text("❌ সব number busy।")
             return
         user_numbers[user_id] = num
         keyboard = [
             [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{num}")],
             [InlineKeyboardButton("❌ Number ছেড়ে দিন", callback_data="release_number")],
         ]
-        await query.edit_message_text(f"✅ *আপনার Number:*\n\n`{num}`\n\nOTP আসলে সাথে সাথে notify করা হবে! 🔔", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"✅ *আপনার Number:*\n\n`{num}`\n\nOTP আসলে notify করা হবে! 🔔", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data == "check_otp":
         if user_id not in user_numbers:
             await query.edit_message_text("❌ আগে number নিন।")
             return
         num = user_numbers[user_id]
-        await query.edit_message_text(f"🔍 `{num}` এর OTP খুঁজছি...", parse_mode="Markdown")
+        await query.edit_message_text(f"🔍 খুঁজছি...", parse_mode="Markdown")
         result = fetch_otp_for_number(num)
         if result:
             otp_code = extract_otp(result["message"])
@@ -322,7 +371,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
-            await query.edit_message_text(f"⏳ `{num}` এ এখনো OTP আসেনি।", parse_mode="Markdown")
+            keyboard = [[InlineKeyboardButton("🔄 আবার Check", callback_data="check_otp")]]
+            await query.edit_message_text(f"⏳ এখনো OTP আসেনি।", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("refresh_"):
         num = data.replace("refresh_", "")
@@ -348,7 +398,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "admin_upload":
         if user_id != ADMIN_ID:
             return
-        await query.edit_message_text("📤 এখন একটা TXT বা CSV ফাইল পাঠান।\n\nFormat:\n```\n959655653869\n959654946028\n```", parse_mode="Markdown")
+        await query.edit_message_text("📤 TXT বা CSV file পাঠান।\n\nFormat:\n```\n959655653869\n959654946028\n```", parse_mode="Markdown")
 
     elif data == "admin_clear":
         if user_id != ADMIN_ID:
@@ -360,15 +410,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "admin_relogin":
         if user_id != ADMIN_ID:
             return
-        await query.edit_message_text(
-            "ℹ️ Session cookie update করতে হলে:\n\n"
-            "1. Browser দিয়ে panel এ login করুন\n"
-            "2. Console এ `document.cookie` run করুন\n"
-            "3. PHPSESSID copy করুন\n"
-            "4. Code এ update করুন\n\n"
-            f"Current: `{session_cookie[:20]}...`",
-            parse_mode="Markdown"
-        )
+        global session_cookie
+        session_cookie = None
+        await query.edit_message_text("🔄 Re-login করছি...")
+        result = login_dashboard()
+        if result:
+            await context.bot.send_message(chat_id=user_id, text=f"✅ Re-login সফল!\n`{result[:15]}...`", parse_mode="Markdown")
+        else:
+            await context.bot.send_message(chat_id=user_id, text="❌ Re-login failed!")
 
 async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -380,45 +429,28 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content = await file.download_as_bytearray()
     text = content.decode("utf-8", errors="ignore")
     new_numbers = []
-
-    logger.info(f"📁 Processing file: {doc.file_name}")
-
-    # Space, newline, comma, semicolon সব দিয়ে split করো
     tokens = re.split(r'[\s,;]+', text)
     for token in tokens:
         token = token.strip().replace("+", "")
         if token.isdigit() and 8 <= len(token) <= 15:
             new_numbers.append(token)
-
     existing = set(numbers_pool)
     added = [n for n in new_numbers if n not in existing]
     numbers_pool.extend(added)
-
-    logger.info(f"✅ Upload complete: {len(added)} new, {len(numbers_pool)} total")
-
     await update.message.reply_text(
-        f"✅ *Upload সফল!*\n\n"
-        f"📥 নতুন: {len(added)}\n"
-        f"📦 Total: {len(numbers_pool)}",
+        f"✅ *Upload সফল!*\n\n📥 নতুন: {len(added)}\n📦 Total: {len(numbers_pool)}",
         parse_mode="Markdown"
     )
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
-    logger.info("🔐 Testing session cookie...")
-    test_result = fetch_all_recent_otps()
-    if test_result:
-        logger.info(f"✅ Session working! Found {len(test_result)} SMS records")
-    else:
-        logger.warning("⚠️ Session might be expired!")
-
+    logger.info("🔐 Auto-login করছি...")
+    login_dashboard()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, upload_numbers))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.job_queue.run_repeating(poll_otps, interval=15, first=5)
-
     logger.info("🤖 Bot starting...")
     app.run_polling(drop_pending_updates=True)
 
