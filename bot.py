@@ -111,12 +111,11 @@ def fetch_otp_for_number(number: str):
     try:
         clean_num = number.lstrip("+")
         resp = requests.get(
-            f"{DASHBOARD_BASE}/res/data_smscdr.php",
-            params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 50, "fnumber": clean_num},
+            "http://185.2.83.39/ints/agent/SMSCDRStats",
+            params={"fnumber": clean_num},
             headers={
                 "Cookie": f"PHPSESSID={cookie}",
                 "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             },
             timeout=10
@@ -152,12 +151,11 @@ def fetch_all_recent_otps():
         return []
     try:
         resp = requests.get(
-            f"{DASHBOARD_BASE}/res/data_smscdr.php",
-            params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 100},
+            "http://185.2.83.39/ints/agent/SMSCDRStats",
+            params={"iDisplayLength": 100},
             headers={
                 "Cookie": f"PHPSESSID={cookie}",
                 "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             },
             timeout=10
