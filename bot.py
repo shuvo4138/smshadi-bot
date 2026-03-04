@@ -6,6 +6,7 @@ import csv
 import random
 import requests
 import os
+import json
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -22,6 +23,7 @@ JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours").stri
 DASHBOARD_BASE = os.getenv("DASHBOARD_BASE", "http://185.2.83.39/ints/agent/SMSDashboard").strip()
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "shuvo098").strip()
 DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "Shuvo.99@@").strip()
+NUMBERS_FILE = "numbers.json"
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN is not set!")
@@ -34,17 +36,35 @@ user_numbers = {}
 otp_cache = {}
 session_cookie = None
 
+# ============ FILE STORAGE ============
+def save_numbers():
+    try:
+        with open(NUMBERS_FILE, "w") as f:
+            json.dump(numbers_pool, f)
+        logger.info(f"💾 Saved {len(numbers_pool)} numbers to file")
+    except Exception as e:
+        logger.error(f"Save error: {e}")
+
+def load_numbers():
+    global numbers_pool
+    try:
+        if os.path.exists(NUMBERS_FILE):
+            with open(NUMBERS_FILE, "r") as f:
+                numbers_pool = json.load(f)
+            logger.info(f"📂 Loaded {len(numbers_pool)} numbers from file")
+    except Exception as e:
+        logger.error(f"Load error: {e}")
+
+# ============ DASHBOARD LOGIN ============
 def login_dashboard():
     global session_cookie
     try:
         session = requests.Session()
-        # Login page থেকে captcha নাও
         resp = session.get(
             "http://185.2.83.39/ints/login",
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             timeout=10
         )
-        # Math captcha solve করো
         captcha_match = re.search(r'What is (\d+)\s*\+\s*(\d+)', resp.text)
         if captcha_match:
             a = int(captcha_match.group(1))
@@ -53,9 +73,7 @@ def login_dashboard():
             logger.info(f"🔢 Captcha: {a} + {b} = {captcha_answer}")
         else:
             captcha_answer = "6"
-            logger.warning("⚠️ Captcha not found, using default 6")
 
-        # Login করো
         login_resp = session.post(
             "http://185.2.83.39/ints/login",
             data={
@@ -72,7 +90,7 @@ def login_dashboard():
             logger.info(f"✅ Auto-login success: {session_cookie[:15]}...")
             return session_cookie
         else:
-            logger.error(f"❌ Login failed: {login_resp.status_code} - {login_resp.text[:200]}")
+            logger.error(f"❌ Login failed: {login_resp.status_code}")
     except Exception as e:
         logger.error(f"❌ Login error: {e}")
     return None
@@ -83,6 +101,7 @@ def get_session():
         login_dashboard()
     return session_cookie
 
+# ============ API CALLS ============
 def fetch_otp_for_number(number: str):
     cookie = get_session()
     if not cookie:
@@ -116,7 +135,6 @@ def fetch_otp_for_number(number: str):
             except Exception:
                 pass
         elif resp.status_code in [302, 401, 403]:
-            logger.warning("⚠️ Session expired! Re-logging in...")
             global session_cookie
             session_cookie = None
             login_dashboard()
@@ -147,7 +165,6 @@ def fetch_all_recent_otps():
             except Exception:
                 pass
         elif resp.status_code in [302, 401, 403]:
-            logger.warning("⚠️ Session expired! Re-logging in...")
             global session_cookie
             session_cookie = None
             login_dashboard()
@@ -155,6 +172,7 @@ def fetch_all_recent_otps():
         logger.error(f"❌ Recent OTP error: {e}")
     return []
 
+# ============ HELPERS ============
 def extract_otp(msg: str) -> str:
     msg = msg.replace("# ", "").replace("#", "")
     codes = re.findall(r'\b\d{4,8}\b', msg)
@@ -183,6 +201,7 @@ def get_user_keyboard(user_id):
         [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
     ], resize_keyboard=True)
 
+# ============ OTP POLLING ============
 async def poll_otps(context):
     rows = fetch_all_recent_otps()
     for row in rows:
@@ -231,6 +250,7 @@ async def poll_otps(context):
             except Exception as e:
                 logger.error(f"User notify error: {e}")
 
+# ============ HANDLERS ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     inline_keyboard = [
@@ -361,7 +381,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ আগে number নিন।")
             return
         num = user_numbers[user_id]
-        await query.edit_message_text(f"🔍 খুঁজছি...", parse_mode="Markdown")
+        await query.edit_message_text("🔍 খুঁজছি...")
         result = fetch_otp_for_number(num)
         if result:
             otp_code = extract_otp(result["message"])
@@ -372,7 +392,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             keyboard = [[InlineKeyboardButton("🔄 আবার Check", callback_data="check_otp")]]
-            await query.edit_message_text(f"⏳ এখনো OTP আসেনি।", reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.edit_message_text("⏳ এখনো OTP আসেনি।", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("refresh_"):
         num = data.replace("refresh_", "")
@@ -405,6 +425,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         numbers_pool.clear()
         user_numbers.clear()
+        save_numbers()
         await query.edit_message_text("✅ সব numbers clear হয়েছে।")
 
     elif data == "admin_relogin":
@@ -415,7 +436,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🔄 Re-login করছি...")
         result = login_dashboard()
         if result:
-            await context.bot.send_message(chat_id=user_id, text=f"✅ Re-login সফল!\n`{result[:15]}...`", parse_mode="Markdown")
+            await context.bot.send_message(chat_id=user_id, text=f"✅ Re-login সফল!", parse_mode="Markdown")
         else:
             await context.bot.send_message(chat_id=user_id, text="❌ Re-login failed!")
 
@@ -437,12 +458,14 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     existing = set(numbers_pool)
     added = [n for n in new_numbers if n not in existing]
     numbers_pool.extend(added)
+    save_numbers()
     await update.message.reply_text(
         f"✅ *Upload সফল!*\n\n📥 নতুন: {len(added)}\n📦 Total: {len(numbers_pool)}",
         parse_mode="Markdown"
     )
 
 def main():
+    load_numbers()
     app = Application.builder().token(BOT_TOKEN).build()
     logger.info("🔐 Auto-login করছি...")
     login_dashboard()
