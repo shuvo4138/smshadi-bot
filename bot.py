@@ -19,7 +19,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
 JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours").strip()
-DASHBOARD_BASE = os.getenv("DASHBOARD_BASE", "http://185.2.83.39/ints/agent/SMSDashboard").strip()
+DASHBOARD_BASE = os.getenv("DASHBOARD_BASE", "http://185.2.83.39/ints/agent").strip()
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "shuvo098").strip()
 DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "Shuvo.99@@").strip()
 NUMBERS_FILE = "numbers.json"
@@ -57,42 +57,26 @@ def login_dashboard():
     global session_cookie
     try:
         session = requests.Session()
-        resp = session.get(
-            "http://185.2.83.39/ints/login",
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-            timeout=10
-        )
-        captcha_match = re.search(r'What is (\d+)\s*\+\s*(\d+)', resp.text)
-        if captcha_match:
-            a = int(captcha_match.group(1))
-            b = int(captcha_match.group(2))
-            captcha_answer = str(a + b)
-            logger.info(f"🔢 Captcha: {a} + {b} = {captcha_answer}")
-        else:
-            captcha_answer = "6"
-            logger.warning("⚠️ Captcha not found, using 6")
-
+        # Direct login without captcha
         login_resp = session.post(
-            "http://185.2.83.39/ints/login",
+            "http://185.2.83.39/ints/agent/",
             data={
                 "username": DASHBOARD_USER,
                 "password": DASHBOARD_PASS,
-                "captcha": captcha_answer
             },
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
             allow_redirects=True,
             timeout=10
         )
+        
         logger.info(f"🔐 Login response: {login_resp.status_code}, URL: {login_resp.url}")
-        logger.info(f"🍪 Cookies: {dict(session.cookies)}")
-
+        
         if "PHPSESSID" in session.cookies:
             session_cookie = session.cookies["PHPSESSID"]
             logger.info(f"✅ Login success: {session_cookie[:15]}...")
             return session_cookie
         else:
             logger.error(f"❌ Login failed - no PHPSESSID cookie")
-            logger.error(f"Response: {login_resp.text[:300]}")
     except Exception as e:
         logger.error(f"❌ Login error: {e}")
     return None
@@ -161,7 +145,6 @@ def fetch_all_recent_otps():
             timeout=10
         )
         logger.info(f"📡 CDR Status: {resp.status_code}, Size: {len(resp.text)}")
-        logger.info(f"📄 Response preview: {resp.text[:300]}")
 
         if resp.status_code == 200:
             try:
@@ -170,7 +153,7 @@ def fetch_all_recent_otps():
                 logger.info(f"✅ Got {len(rows)} SMS rows")
                 return rows
             except Exception as e:
-                logger.error(f"JSON parse error: {e} - Raw: {resp.text[:200]}")
+                logger.error(f"JSON parse error: {e}")
         elif resp.status_code in [302, 401, 403]:
             global session_cookie
             session_cookie = None
@@ -195,18 +178,6 @@ def get_available_number():
     assigned = set(user_numbers.values())
     available = [n for n in numbers_pool if n not in assigned]
     return random.choice(available) if available else None
-
-def get_user_keyboard(user_id):
-    if user_id == ADMIN_ID:
-        return ReplyKeyboardMarkup([
-            [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
-            [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
-            [KeyboardButton("👑 Admin Panel")]
-        ], resize_keyboard=True)
-    return ReplyKeyboardMarkup([
-        [KeyboardButton("🏠 Home"), KeyboardButton("📲 Get Number")],
-        [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
-    ], resize_keyboard=True)
 
 async def poll_otps(context):
     rows = fetch_all_recent_otps()
@@ -253,34 +224,31 @@ async def poll_otps(context):
             )
             try:
                 await context.bot.send_message(chat_id=owner_id, text=user_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+                logger.info(f"✅ Notified user {owner_id} about OTP for {number}")
             except Exception as e:
                 logger.error(f"User notify error: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    inline_keyboard = [
-        [InlineKeyboardButton("📲 Number নিন", callback_data="get_number")],
-        [InlineKeyboardButton("🔍 OTP Check করুন", callback_data="check_otp")],
-        [InlineKeyboardButton("📢 OTP Channel", url=JOIN_CHANNEL)],
-    ]
+    keyboard = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("📲 Get Number"), KeyboardButton("🔍 Check OTP")],
+            [KeyboardButton("📋 My Number"), KeyboardButton("📢 OTP Channel")],
+            [KeyboardButton("👑 Admin Panel")]
+        ],
+        resize_keyboard=True
+    )
     await update.message.reply_text(
         f"👋 স্বাগতম {user.first_name}!\n\n🤖 *SMS Hadi OTP Bot*\n\nMyanmar number নিন এবং OTP receive করুন।",
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard)
-    )
-    await update.message.reply_text(
-        "নিচের menu থেকে option বেছে নিন:",
-        reply_markup=get_user_keyboard(user.id)
+        reply_markup=keyboard
     )
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
     user_id = update.effective_user.id
+    text = update.message.text
 
-    if text == "🏠 Home":
-        await start(update, context)
-
-    elif text == "📲 Get Number":
+    if text == "📲 Get Number":
         if not numbers_pool:
             await update.message.reply_text("❌ এখন কোনো number নেই। Admin কে জানান।")
             return
