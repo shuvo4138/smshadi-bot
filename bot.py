@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import re
 import io
@@ -36,12 +35,11 @@ user_numbers = {}
 otp_cache = {}
 session_cookie = None
 
-# ============ FILE STORAGE ============
 def save_numbers():
     try:
         with open(NUMBERS_FILE, "w") as f:
             json.dump(numbers_pool, f)
-        logger.info(f"💾 Saved {len(numbers_pool)} numbers to file")
+        logger.info(f"💾 Saved {len(numbers_pool)} numbers")
     except Exception as e:
         logger.error(f"Save error: {e}")
 
@@ -51,11 +49,10 @@ def load_numbers():
         if os.path.exists(NUMBERS_FILE):
             with open(NUMBERS_FILE, "r") as f:
                 numbers_pool = json.load(f)
-            logger.info(f"📂 Loaded {len(numbers_pool)} numbers from file")
+            logger.info(f"📂 Loaded {len(numbers_pool)} numbers")
     except Exception as e:
         logger.error(f"Load error: {e}")
 
-# ============ DASHBOARD LOGIN ============
 def login_dashboard():
     global session_cookie
     try:
@@ -73,6 +70,7 @@ def login_dashboard():
             logger.info(f"🔢 Captcha: {a} + {b} = {captcha_answer}")
         else:
             captcha_answer = "6"
+            logger.warning("⚠️ Captcha not found, using 6")
 
         login_resp = session.post(
             "http://185.2.83.39/ints/login",
@@ -85,12 +83,16 @@ def login_dashboard():
             allow_redirects=True,
             timeout=10
         )
+        logger.info(f"🔐 Login response: {login_resp.status_code}, URL: {login_resp.url}")
+        logger.info(f"🍪 Cookies: {dict(session.cookies)}")
+
         if "PHPSESSID" in session.cookies:
             session_cookie = session.cookies["PHPSESSID"]
-            logger.info(f"✅ Auto-login success: {session_cookie[:15]}...")
+            logger.info(f"✅ Login success: {session_cookie[:15]}...")
             return session_cookie
         else:
-            logger.error(f"❌ Login failed: {login_resp.status_code}")
+            logger.error(f"❌ Login failed - no PHPSESSID cookie")
+            logger.error(f"Response: {login_resp.text[:300]}")
     except Exception as e:
         logger.error(f"❌ Login error: {e}")
     return None
@@ -101,10 +103,10 @@ def get_session():
         login_dashboard()
     return session_cookie
 
-# ============ API CALLS ============
 def fetch_otp_for_number(number: str):
     cookie = get_session()
     if not cookie:
+        logger.error("❌ No session for fetch_otp!")
         return None
     try:
         clean_num = number.lstrip("+")
@@ -119,6 +121,7 @@ def fetch_otp_for_number(number: str):
             },
             timeout=10
         )
+        logger.info(f"📡 OTP fetch status: {resp.status_code}")
         if resp.status_code == 200:
             try:
                 data = resp.json()
@@ -132,8 +135,8 @@ def fetch_otp_for_number(number: str):
                             "message": str(latest[5] or ""),
                             "number": clean_num
                         }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"JSON error: {e}")
         elif resp.status_code in [302, 401, 403]:
             global session_cookie
             session_cookie = None
@@ -145,6 +148,7 @@ def fetch_otp_for_number(number: str):
 def fetch_all_recent_otps():
     cookie = get_session()
     if not cookie:
+        logger.error("❌ No session for poll!")
         return []
     try:
         resp = requests.get(
@@ -158,21 +162,26 @@ def fetch_all_recent_otps():
             },
             timeout=10
         )
+        logger.info(f"📡 CDR Status: {resp.status_code}, Size: {len(resp.text)}")
+        logger.info(f"📄 Response preview: {resp.text[:300]}")
+
         if resp.status_code == 200:
             try:
                 data = resp.json()
-                return data.get("aaData", [])
-            except Exception:
-                pass
+                rows = data.get("aaData", [])
+                logger.info(f"✅ Got {len(rows)} SMS rows")
+                return rows
+            except Exception as e:
+                logger.error(f"JSON parse error: {e} - Raw: {resp.text[:200]}")
         elif resp.status_code in [302, 401, 403]:
             global session_cookie
             session_cookie = None
+            logger.warning("⚠️ Session expired! Re-login...")
             login_dashboard()
     except Exception as e:
         logger.error(f"❌ Recent OTP error: {e}")
     return []
 
-# ============ HELPERS ============
 def extract_otp(msg: str) -> str:
     msg = msg.replace("# ", "").replace("#", "")
     codes = re.findall(r'\b\d{4,8}\b', msg)
@@ -201,7 +210,6 @@ def get_user_keyboard(user_id):
         [KeyboardButton("🔍 Check OTP"), KeyboardButton("📋 My Number")],
     ], resize_keyboard=True)
 
-# ============ OTP POLLING ============
 async def poll_otps(context):
     rows = fetch_all_recent_otps()
     for row in rows:
@@ -250,7 +258,6 @@ async def poll_otps(context):
             except Exception as e:
                 logger.error(f"User notify error: {e}")
 
-# ============ HANDLERS ============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     inline_keyboard = [
@@ -436,7 +443,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🔄 Re-login করছি...")
         result = login_dashboard()
         if result:
-            await context.bot.send_message(chat_id=user_id, text=f"✅ Re-login সফল!", parse_mode="Markdown")
+            await context.bot.send_message(chat_id=user_id, text="✅ Re-login সফল!")
         else:
             await context.bot.send_message(chat_id=user_id, text="❌ Re-login failed!")
 
