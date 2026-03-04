@@ -96,7 +96,12 @@ def fetch_otp_for_number(number: str):
         clean_num = number.lstrip("+")
         resp = requests.get(
             "http://185.2.83.39/ints/agent/SMSCDRStats",
-            params={"fnumber": clean_num},
+            params={
+                "sEcho": 1,
+                "iDisplayStart": 0,
+                "iDisplayLength": 50,
+                "fnumber": clean_num
+            },
             headers={
                 "Cookie": f"PHPSESSID={cookie}",
                 "X-Requested-With": "XMLHttpRequest",
@@ -136,7 +141,11 @@ def fetch_all_recent_otps():
     try:
         resp = requests.get(
             "http://185.2.83.39/ints/agent/SMSCDRStats",
-            params={"iDisplayLength": 100},
+            params={
+                "sEcho": 1,
+                "iDisplayStart": 0,
+                "iDisplayLength": 100
+            },
             headers={
                 "Cookie": f"PHPSESSID={cookie}",
                 "X-Requested-With": "XMLHttpRequest",
