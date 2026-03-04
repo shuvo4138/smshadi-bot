@@ -35,7 +35,9 @@ if not BOT_TOKEN:
 numbers_pool = []
 user_numbers = {}
 otp_cache = {}
-session_cookie = None
+
+# ✅ MANUAL SESSION COOKIE - Browser থেকে নেওয়া
+session_cookie = "44kap8np50h7fue4dyn2tnbad1"
 
 def get_user_keyboard(user_id):
     if user_id == ADMIN_ID:
@@ -50,70 +52,95 @@ def get_user_keyboard(user_id):
     ], resize_keyboard=True)
 
 def login_dashboard():
+    """
+    ⚠️ DISABLED - Using manual session cookie from browser
+    Panel has CAPTCHA so we can't auto-login
+    """
     global session_cookie
-    try:
-        session = requests.Session()
-        resp = session.post(
-            "http://185.2.83.39/ints/agent/",
-            data={"username": DASHBOARD_USER, "password": DASHBOARD_PASS},
-            allow_redirects=True,
-            timeout=10
-        )
-        if "PHPSESSID" in session.cookies:
-            session_cookie = session.cookies["PHPSESSID"]
-            logger.info(f"Login success")
-            return session_cookie
-    except Exception as e:
-        logger.error(f"Login error: {e}")
-    return None
+    logger.info(f"✅ Using manual session: {session_cookie[:20]}...")
+    return session_cookie
 
 def get_session():
     global session_cookie
     if not session_cookie:
-        login_dashboard()
+        session_cookie = "44kap8np50h7fue4dyn2tnbad1"  # Manual session
     return session_cookie
 
 def fetch_otp_for_number(number: str):
     cookie = get_session()
     if not cookie:
+        logger.error("❌ No session cookie available!")
         return None
     try:
         clean_num = number.lstrip("+")
+        logger.info(f"🔍 Fetching OTP for: {clean_num}")
         resp = requests.get(
             f"{DASHBOARD_BASE}/res/data_smscdr.php",
             params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 50, "fnumber": clean_num},
-            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSCDRReports"},
+            headers={
+                "Cookie": f"PHPSESSID={cookie}", 
+                "X-Requested-With": "XMLHttpRequest", 
+                "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
             timeout=10
         )
-        data = resp.json()
-        rows = data.get("aaData", [])
-        if rows:
-            latest = rows[0]
-            if len(latest) >= 6:
-                return {"datetime": latest[0], "sender": str(latest[3] or ""), "message": str(latest[5] or ""), "number": clean_num}
+        logger.info(f"📡 API Response Status: {resp.status_code}")
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            rows = data.get("aaData", [])
+            logger.info(f"📊 Found {len(rows)} SMS records")
+            
+            if rows:
+                latest = rows[0]
+                if len(latest) >= 6:
+                    result = {
+                        "datetime": latest[0], 
+                        "sender": str(latest[3] or ""), 
+                        "message": str(latest[5] or ""), 
+                        "number": clean_num
+                    }
+                    logger.info(f"✅ OTP found: {result['sender']} - {result['message'][:50]}")
+                    return result
+        else:
+            logger.error(f"❌ API Error: {resp.status_code} - {resp.text[:200]}")
+            
     except Exception as e:
-        logger.error(f"OTP fetch error: {e}")
-        global session_cookie
-        session_cookie = None
+        logger.error(f"❌ OTP fetch error: {e}")
+    
     return None
 
 def fetch_all_recent_otps():
     cookie = get_session()
     if not cookie:
+        logger.error("❌ No session cookie!")
         return []
     try:
+        logger.info("🔄 Fetching all recent OTPs...")
         resp = requests.get(
             f"{DASHBOARD_BASE}/res/data_smscdr.php",
             params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 100},
-            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSCDRReports"},
+            headers={
+                "Cookie": f"PHPSESSID={cookie}", 
+                "X-Requested-With": "XMLHttpRequest", 
+                "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
             timeout=10
         )
-        data = resp.json()
-        return data.get("aaData", [])
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            rows = data.get("aaData", [])
+            logger.info(f"✅ Fetched {len(rows)} recent SMS")
+            return rows
+        else:
+            logger.error(f"❌ Fetch error: {resp.status_code}")
+            
     except Exception as e:
-        logger.error(f"Recent OTP error: {e}")
-        global session_cookie
-        session_cookie = None
+        logger.error(f"❌ Recent OTP error: {e}")
+    
     return []
 
 def extract_otp(msg: str) -> str:
@@ -264,14 +291,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("📤 Numbers Upload করুন", callback_data="admin_upload")],
             [InlineKeyboardButton("🗑 সব Numbers Clear", callback_data="admin_clear")],
-            [InlineKeyboardButton("🔄 Re-login Dashboard", callback_data="admin_relogin")],
+            [InlineKeyboardButton("🔄 Update Session", callback_data="admin_relogin")],
         ]
         await update.message.reply_text(
             f"👑 *Admin Panel*\n\n"
             f"📦 Total Numbers: {len(numbers_pool)}\n"
             f"✅ Available: {available}\n"
             f"👥 Assigned: {assigned}\n"
-            f"🔑 Session: {'✅' if session_cookie else '❌'}",
+            f"🔑 Session: {'✅ Active' if session_cookie else '❌ None'}\n"
+            f"📝 Cookie: `{session_cookie[:20]}...`",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -358,10 +386,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "admin_relogin":
         if user_id != ADMIN_ID:
             return
-        global session_cookie
-        session_cookie = None
-        result = login_dashboard()
-        await query.edit_message_text("✅ Re-login সফল!" if result else "❌ Login failed!")
+        await query.edit_message_text(
+            "ℹ️ Session cookie update করতে হলে:\n\n"
+            "1. Browser দিয়ে panel এ login করুন\n"
+            "2. Console এ `document.cookie` run করুন\n"
+            "3. PHPSESSID copy করুন\n"
+            "4. Code এ update করুন\n\n"
+            f"Current: `{session_cookie[:20]}...`",
+            parse_mode="Markdown"
+        )
 
 async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -373,6 +406,9 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content = await file.download_as_bytearray()
     text = content.decode("utf-8", errors="ignore")
     new_numbers = []
+    
+    logger.info(f"📁 Processing file: {doc.file_name}")
+    
     if doc.file_name.endswith(".csv"):
         reader = csv.reader(io.StringIO(text))
         for row in reader:
@@ -385,20 +421,38 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
             line = line.strip().replace("+", "").replace(" ", "")
             if line.isdigit() and 8 <= len(line) <= 15:
                 new_numbers.append(line)
+    
     existing = set(numbers_pool)
     added = [n for n in new_numbers if n not in existing]
     numbers_pool.extend(added)
-    await update.message.reply_text(f"✅ *Upload সফল!*\n\n📥 নতুন: {len(added)}\n📦 Total: {len(numbers_pool)}", parse_mode="Markdown")
+    
+    logger.info(f"✅ Upload complete: {len(added)} new, {len(numbers_pool)} total")
+    
+    await update.message.reply_text(
+        f"✅ *Upload সফল!*\n\n"
+        f"📥 নতুন: {len(added)}\n"
+        f"📦 Total: {len(numbers_pool)}", 
+        parse_mode="Markdown"
+    )
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    login_dashboard()
+    
+    # Test session on startup
+    logger.info("🔐 Testing session cookie...")
+    test_result = fetch_all_recent_otps()
+    if test_result:
+        logger.info(f"✅ Session working! Found {len(test_result)} SMS records")
+    else:
+        logger.warning("⚠️ Session might be expired. Check console cookie!")
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, upload_numbers))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.job_queue.run_repeating(poll_otps, interval=15, first=5)
-    logger.info("Bot starting...")
+    
+    logger.info("🤖 Bot starting...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
