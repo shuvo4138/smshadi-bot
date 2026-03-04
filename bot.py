@@ -36,7 +36,6 @@ numbers_pool = []
 user_numbers = {}
 otp_cache = {}
 
-# ✅ MANUAL SESSION COOKIE - Browser থেকে নেওয়া
 session_cookie = "44kap8np50h7fue4dyn2tnbad1"
 
 def get_user_keyboard(user_id):
@@ -52,10 +51,6 @@ def get_user_keyboard(user_id):
     ], resize_keyboard=True)
 
 def login_dashboard():
-    """
-    ⚠️ DISABLED - Using manual session cookie from browser
-    Panel has CAPTCHA so we can't auto-login
-    """
     global session_cookie
     logger.info(f"✅ Using manual session: {session_cookie[:20]}...")
     return session_cookie
@@ -63,84 +58,63 @@ def login_dashboard():
 def get_session():
     global session_cookie
     if not session_cookie:
-        session_cookie = "44kap8np50h7fue4dyn2tnbad1"  # Manual session
+        session_cookie = "44kap8np50h7fue4dyn2tnbad1"
     return session_cookie
 
 def fetch_otp_for_number(number: str):
     cookie = get_session()
     if not cookie:
-        logger.error("❌ No session cookie available!")
         return None
     try:
         clean_num = number.lstrip("+")
-        logger.info(f"🔍 Fetching OTP for: {clean_num}")
         resp = requests.get(
             f"{DASHBOARD_BASE}/res/data_smscdr.php",
             params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 50, "fnumber": clean_num},
             headers={
-                "Cookie": f"PHPSESSID={cookie}", 
-                "X-Requested-With": "XMLHttpRequest", 
+                "Cookie": f"PHPSESSID={cookie}",
+                "X-Requested-With": "XMLHttpRequest",
                 "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             },
             timeout=10
         )
-        logger.info(f"📡 API Response Status: {resp.status_code}")
-        
         if resp.status_code == 200:
             data = resp.json()
             rows = data.get("aaData", [])
-            logger.info(f"📊 Found {len(rows)} SMS records")
-            
             if rows:
                 latest = rows[0]
                 if len(latest) >= 6:
-                    result = {
-                        "datetime": latest[0], 
-                        "sender": str(latest[3] or ""), 
-                        "message": str(latest[5] or ""), 
+                    return {
+                        "datetime": latest[0],
+                        "sender": str(latest[3] or ""),
+                        "message": str(latest[5] or ""),
                         "number": clean_num
                     }
-                    logger.info(f"✅ OTP found: {result['sender']} - {result['message'][:50]}")
-                    return result
-        else:
-            logger.error(f"❌ API Error: {resp.status_code} - {resp.text[:200]}")
-            
     except Exception as e:
-        logger.error(f"❌ OTP fetch error: {e}")
-    
+        logger.error(f"OTP fetch error: {e}")
     return None
 
 def fetch_all_recent_otps():
     cookie = get_session()
     if not cookie:
-        logger.error("❌ No session cookie!")
         return []
     try:
-        logger.info("🔄 Fetching all recent OTPs...")
         resp = requests.get(
             f"{DASHBOARD_BASE}/res/data_smscdr.php",
             params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 100},
             headers={
-                "Cookie": f"PHPSESSID={cookie}", 
-                "X-Requested-With": "XMLHttpRequest", 
+                "Cookie": f"PHPSESSID={cookie}",
+                "X-Requested-With": "XMLHttpRequest",
                 "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             },
             timeout=10
         )
-        
         if resp.status_code == 200:
             data = resp.json()
-            rows = data.get("aaData", [])
-            logger.info(f"✅ Fetched {len(rows)} recent SMS")
-            return rows
-        else:
-            logger.error(f"❌ Fetch error: {resp.status_code}")
-            
+            return data.get("aaData", [])
     except Exception as e:
-        logger.error(f"❌ Recent OTP error: {e}")
-    
+        logger.error(f"Recent OTP error: {e}")
     return []
 
 def extract_otp(msg: str) -> str:
@@ -406,52 +380,45 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content = await file.download_as_bytearray()
     text = content.decode("utf-8", errors="ignore")
     new_numbers = []
-    
+
     logger.info(f"📁 Processing file: {doc.file_name}")
-    
-    if doc.file_name.endswith(".csv"):
-        reader = csv.reader(io.StringIO(text))
-        for row in reader:
-            for cell in row:
-                cell = cell.strip().replace("+", "").replace(" ", "")
-                if cell.isdigit() and 8 <= len(cell) <= 15:
-                    new_numbers.append(cell)
-    else:
-        for line in text.splitlines():
-            line = line.strip().replace("+", "").replace(" ", "")
-            if line.isdigit() and 8 <= len(line) <= 15:
-                new_numbers.append(line)
-    
+
+    # Space, newline, comma, semicolon সব দিয়ে split করো
+    tokens = re.split(r'[\s,;]+', text)
+    for token in tokens:
+        token = token.strip().replace("+", "")
+        if token.isdigit() and 8 <= len(token) <= 15:
+            new_numbers.append(token)
+
     existing = set(numbers_pool)
     added = [n for n in new_numbers if n not in existing]
     numbers_pool.extend(added)
-    
+
     logger.info(f"✅ Upload complete: {len(added)} new, {len(numbers_pool)} total")
-    
+
     await update.message.reply_text(
         f"✅ *Upload সফল!*\n\n"
         f"📥 নতুন: {len(added)}\n"
-        f"📦 Total: {len(numbers_pool)}", 
+        f"📦 Total: {len(numbers_pool)}",
         parse_mode="Markdown"
     )
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    
-    # Test session on startup
+
     logger.info("🔐 Testing session cookie...")
     test_result = fetch_all_recent_otps()
     if test_result:
         logger.info(f"✅ Session working! Found {len(test_result)} SMS records")
     else:
-        logger.warning("⚠️ Session might be expired. Check console cookie!")
-    
+        logger.warning("⚠️ Session might be expired!")
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, upload_numbers))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.job_queue.run_repeating(poll_otps, interval=15, first=5)
-    
+
     logger.info("🤖 Bot starting...")
     app.run_polling(drop_pending_updates=True)
 
