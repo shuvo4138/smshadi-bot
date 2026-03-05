@@ -94,13 +94,19 @@ def fetch_otp_for_number(number: str):
         return None
     try:
         clean_num = number.lstrip("+")
+        from datetime import datetime, timedelta
+        today = datetime.now().strftime("%Y-%m-%d")
+        
         resp = requests.get(
-            "http://185.2.83.39/ints/agent/SMSCDRStats",
+            "http://185.2.83.39/ints/agent/data_smscdr.php",
             params={
-                "sEcho": 1,
+                "fdate1": f"{today} 00:00:00",
+                "fdate2": f"{today} 23:59:59",
+                "fnum": clean_num,
                 "iDisplayStart": 0,
                 "iDisplayLength": 50,
-                "fnumber": clean_num
+                "sEcho": 1,
+                "iColumns": 9
             },
             headers={
                 "Cookie": f"PHPSESSID={cookie}",
@@ -139,12 +145,31 @@ def fetch_all_recent_otps():
         logger.error("❌ No session for poll!")
         return []
     try:
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        
         resp = requests.get(
-            "http://185.2.83.39/ints/agent/SMSCDRStats",
+            "http://185.2.83.39/ints/agent/data_smscdr.php",
             params={
-                "sEcho": 1,
+                "fdate1": f"{today} 00:00:00",
+                "fdate2": f"{today} 23:59:59",
                 "iDisplayStart": 0,
-                "iDisplayLength": 100
+                "iDisplayLength": 100,
+                "sEcho": 1,
+                "iColumns": 9,
+                "sColumns": ",,,,,,,,",
+                "mDataProp_0": 0,
+                "mDataProp_1": 1,
+                "mDataProp_2": 2,
+                "mDataProp_3": 3,
+                "mDataProp_4": 4,
+                "mDataProp_5": 5,
+                "mDataProp_6": 6,
+                "mDataProp_7": 7,
+                "mDataProp_8": 8,
+                "iSortCol_0": 0,
+                "sSortDir_0": "desc",
+                "iSortingCols": 1
             },
             headers={
                 "Cookie": f"PHPSESSID={cookie}",
