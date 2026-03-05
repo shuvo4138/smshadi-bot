@@ -223,11 +223,18 @@ def fetch_all_recent_otps():
             headers={
                 "Cookie": f"PHPSESSID={cookie}",
                 "X-Requested-With": "XMLHttpRequest",
+                "Accept-Encoding": "gzip, deflate",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             },
             timeout=10
         )
+        
+        # Handle encoding
+        if resp.encoding is None:
+            resp.encoding = 'utf-8'
+            
         logger.info(f"📡 CDR Status: {resp.status_code}, Size: {len(resp.text)}")
+        logger.info(f"📄 Response preview: {resp.text[:300]}")
 
         if resp.status_code == 200:
             try:
@@ -237,6 +244,7 @@ def fetch_all_recent_otps():
                 return rows
             except Exception as e:
                 logger.error(f"JSON parse error: {e}")
+                logger.error(f"Response text: {resp.text[:500]}")
         elif resp.status_code in [302, 401, 403]:
             global session_cookie
             session_cookie = None
