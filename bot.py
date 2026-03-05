@@ -149,7 +149,7 @@ def fetch_all_recent_otps():
         today = datetime.now().strftime("%Y-%m-%d")
         
         resp = requests.get(
-            "http://185.2.83.39/ints/agent/data_smscdr.php",
+            "http://185.2.83.39/ints/agent/res/data_smscdr.php",
             params={
                 "fdate1": f"{today} 00:00:00",
                 "fdate2": f"{today} 23:59:59",
