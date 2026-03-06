@@ -4,6 +4,7 @@ import random
 import requests
 import os
 import json
+import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -139,6 +140,7 @@ user_numbers = {}   # user_id -> {"number": ..., "service": ..., "country": ...}
 user_history = {}   # user_id -> list of records
 otp_history = {}    # number -> list of otp records
 otp_cache = {}      # cache_key -> datetime
+last_poll_time = [None]  # শেষবার poll এর সময়
 banned_users = set()
 all_users = set()
 
@@ -353,7 +355,11 @@ async def is_member(bot, user_id: int) -> bool:
 # ─── Polling Job ─────────────────────────────────────────────────
 
 async def poll_otps(context):
+    global last_poll_time
+    now = datetime.utcnow()
     rows = fetch_all_recent_otps()
+    new_last_time = last_poll_time[0]
+
     for row in rows:
         try:
             dt_str = row.get("dt", "")
@@ -362,10 +368,32 @@ async def poll_otps(context):
             message = row.get("message", "")
             if not message or not number:
                 continue
+
+            # datetime parse করো
+            try:
+                row_time = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+            except:
+                row_time = None
+
+            # প্রথমবার চললে current time set করো, পুরনো OTP skip করো
+            if last_poll_time[0] is None:
+                if new_last_time is None or (row_time and row_time > new_last_time):
+                    new_last_time = row_time
+                continue
+
+            # পুরনো OTP skip
+            if row_time and last_poll_time[0] and row_time <= last_poll_time[0]:
+                continue
+
+            # নতুন last time track করো
+            if new_last_time is None or (row_time and row_time > new_last_time):
+                new_last_time = row_time
+
             cache_key = f"{number}:{dt_str}:{message[:30]}"
-            if is_cache_fresh(cache_key):
+            if cache_key in otp_cache:
                 continue
             otp_cache[cache_key] = datetime.now()
+
             otp_code = extract_otp(message)
             add_otp_to_history(number, {"datetime": dt_str, "sender": sender, "message": message, "otp": otp_code})
 
@@ -382,8 +410,16 @@ async def poll_otps(context):
                     text=f"📩 *নতুন OTP*\n\n{flag} Number: `{mask_number(number)}`\n🏢 From: {sender}\n🔐 OTP: `{otp_code}`\n💬 {message[:100]}\n🕐 {dt_str}",
                     parse_mode="Markdown"
                 )
+                await asyncio.sleep(0.5)
             except Exception as e:
-                logger.error(f"Channel error: {e}")
+                err = str(e)
+                if "Flood control" in err or "flood" in err.lower():
+                    match = re.search(r'Retry in (\d+)', err)
+                    wait = int(match.group(1)) + 2 if match else 15
+                    logger.warning(f"Flood control, waiting {wait}s...")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"Channel error: {e}")
 
             if owner_id:
                 try:
@@ -397,6 +433,10 @@ async def poll_otps(context):
                     logger.error(f"User notify error: {e}")
         except Exception as e:
             logger.error(f"OTP process error: {e}")
+
+    # last poll time update করো
+    if new_last_time:
+        last_poll_time[0] = new_last_time
     save_data()
 
 # ─── Handlers ────────────────────────────────────────────────────
@@ -960,7 +1000,7 @@ def main():
     app.add_handler(MessageHandler(filters.Document.ALL, upload_numbers))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.job_queue.run_repeating(poll_otps, interval=10, first=5)
+    app.job_queue.run_repeating(poll_otps, interval=30, first=5, job_kwargs={"max_instances": 1})
     logger.info("✅ Bot running!")
     app.run_polling(drop_pending_updates=True)
 
