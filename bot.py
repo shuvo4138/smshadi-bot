@@ -1,7 +1,5 @@
 import logging
 import re
-import io
-import csv
 import random
 import requests
 import os
@@ -12,20 +10,15 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 
 load_dotenv()
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
 JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours").strip()
-DASHBOARD_BASE = "http://185.2.83.39/ints/agent"
-API_URL = f"{DASHBOARD_BASE}/SMSDashboard/res/data_smscdr.php"
-DASHBOARD_USER = os.getenv("DASHBOARD_USER", "").strip()
-DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "").strip()
+API_TOKEN = os.getenv("API_TOKEN", "").strip()
+API_URL = "http://147.135.212.197/crapi/had/viewstats"
 NUMBERS_FILE = "numbers.json"
 
 if not BOT_TOKEN:
@@ -37,7 +30,6 @@ if not BOT_TOKEN:
 numbers_pool = []
 user_numbers = {}
 otp_cache = {}
-session_cookie = None
 
 def save_numbers():
     try:
@@ -57,134 +49,51 @@ def load_numbers():
     except Exception as e:
         logger.error(f"Load error: {e}")
 
-def solve_captcha(question: str) -> str:
-    try:
-        match = re.search(r'(\d+)\s*\+\s*(\d+)', question)
-        if match:
-            return str(int(match.group(1)) + int(match.group(2)))
-        match = re.search(r'(\d+)\s*-\s*(\d+)', question)
-        if match:
-            return str(int(match.group(1)) - int(match.group(2)))
-        match = re.search(r'(\d+)\s*[*×]\s*(\d+)', question)
-        if match:
-            return str(int(match.group(1)) * int(match.group(2)))
-    except Exception as e:
-        logger.error(f"Captcha error: {e}")
-    return ""
-
-def login_dashboard():
-    global session_cookie
-    try:
-        session = requests.Session()
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-        login_url = "http://185.2.83.39/ints/login"
-        resp = session.get(login_url, headers=headers, timeout=15)
-
-        captcha_answer = ""
-        match = re.search(r'(\d+)\s*[\+\-\*×]\s*(\d+)', resp.text)
-        if match:
-            captcha_answer = solve_captcha(match.group(0))
-        if not captcha_answer:
-            captcha_answer = "15"
-
-        login_data = {
-            "username": DASHBOARD_USER,
-            "password": DASHBOARD_PASS,
-            "captcha": captcha_answer,
-            "submit": "LOGIN"
-        }
-        login_resp = session.post(login_url, data=login_data, headers=headers, allow_redirects=True, timeout=15)
-
-        if "PHPSESSID" in session.cookies:
-            session_cookie = session.cookies["PHPSESSID"]
-            logger.info("Login success!")
-            return session_cookie
-
-        logger.error("Login failed!")
-        return None
-
-    except Exception as e:
-        logger.error(f"Login error: {e}")
-        return None
-
-def get_session():
-    global session_cookie
-    if not session_cookie:
-        login_dashboard()
-    return session_cookie
-
-def test_session():
-    global session_cookie
-    cookie = get_session()
-    if not cookie:
-        return False
-    try:
-        resp = requests.get(
-            f"{DASHBOARD_BASE}/res/data_smscdr.php",
-            params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 10},
-            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest"},
-            timeout=10
-        )
-        return resp.status_code == 200
-    except Exception as e:
-        logger.error(f"Session test error: {e}")
-        return False
-
 def fetch_otp_for_number(number: str):
-    global session_cookie
-    cookie = get_session()
-    if not cookie:
-        return None
     try:
         clean_num = number.lstrip("+").strip()
         resp = requests.get(
             API_URL,
-            params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 50, "fnumber": clean_num},
-            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSDashboard/SMSCDRReports"},
+            params={
+                "token": API_TOKEN,
+                "filternum": clean_num,
+                "records": 10
+            },
             timeout=15
         )
-        if resp.status_code in [302, 401, 403]:
-            session_cookie = None
-            login_dashboard()
-            return None
         data = resp.json()
-        rows = data.get("aaData", [])
-        if rows and len(rows[0]) >= 6:
-            latest = rows[0]
+        if data.get("status") == "success" and data.get("data"):
+            latest = data["data"][0]
             return {
-                "datetime": str(latest[0] or ""),
-                "sender": str(latest[3] or "Unknown"),
-                "message": str(latest[5] or ""),
-                "number": clean_num
+                "datetime": latest.get("dt", ""),
+                "sender": latest.get("cli", "Unknown"),
+                "message": latest.get("message", ""),
+                "number": latest.get("num", clean_num)
             }
+        else:
+            logger.info(f"No OTP for {clean_num}: {data.get('status')}")
     except Exception as e:
         logger.error(f"Fetch OTP error: {e}")
-        session_cookie = None
     return None
 
 def fetch_all_recent_otps():
-    global session_cookie
-    cookie = get_session()
-    if not cookie:
-        return []
     try:
         resp = requests.get(
             API_URL,
-            params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 100},
-            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSDashboard/SMSCDRReports"},
+            params={
+                "token": API_TOKEN,
+                "records": 100
+            },
             timeout=15
         )
-        if resp.status_code in [302, 401, 403]:
-            session_cookie = None
-            login_dashboard()
-            return []
-        return resp.json().get("aaData", [])
+        data = resp.json()
+        if data.get("status") == "success":
+            logger.info(f"Polling: {len(data.get('data', []))} records")
+            return data.get("data", [])
+        else:
+            logger.warning(f"API error: {data.get('msg', 'Unknown')}")
     except Exception as e:
         logger.error(f"Polling error: {e}")
-        session_cookie = None
     return []
 
 def extract_otp(msg: str) -> str:
@@ -218,25 +127,27 @@ def get_user_keyboard(user_id):
 async def poll_otps(context):
     rows = fetch_all_recent_otps()
     for row in rows:
-        if len(row) < 6:
-            continue
         try:
-            dt_str = str(row[0] or "")
-            number = str(row[2] or "").strip()
-            sender = str(row[3] or "Unknown")
-            message = str(row[5] or "")
+            dt_str = row.get("dt", "")
+            number = str(row.get("num", "")).strip()
+            sender = row.get("cli", "Unknown")
+            message = row.get("message", "")
+
             if not message or not number:
                 continue
+
             cache_key = f"{number}:{message[:30]}"
             if cache_key in otp_cache:
                 continue
             otp_cache[cache_key] = True
             otp_code = extract_otp(message)
+
             owner_id = None
             for uid, num in user_numbers.items():
                 if num == number or num.lstrip("+") == number.lstrip("+"):
                     owner_id = uid
                     break
+
             channel_text = (
                 f"📩 *নতুন OTP*\n\n"
                 f"📞 Number: `{mask_number(number)}`\n"
@@ -249,6 +160,7 @@ async def poll_otps(context):
                 await context.bot.send_message(chat_id=OTP_CHANNEL_ID, text=channel_text, parse_mode="Markdown")
             except Exception as e:
                 logger.error(f"Channel error: {e}")
+
             if owner_id:
                 try:
                     await context.bot.send_message(
@@ -350,18 +262,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📦 Total: {len(numbers_pool)}\n"
             f"✅ Available: {available}\n"
             f"👥 Assigned: {assigned}\n"
-            f"🔑 Session: {'✅ Active' if session_cookie else '❌ None'}",
+            f"🔑 API Token: {'✅' if API_TOKEN else '❌'}",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📤 Numbers Upload", callback_data="admin_upload")],
                 [InlineKeyboardButton("🗑 Clear All", callback_data="admin_clear")],
-                [InlineKeyboardButton("🔄 Re-Login", callback_data="admin_relogin")],
-                [InlineKeyboardButton("🧪 Test Session", callback_data="admin_test")],
+                [InlineKeyboardButton("🧪 Test API", callback_data="admin_test")],
             ])
         )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global session_cookie
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -445,24 +355,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_numbers()
         await query.edit_message_text("✅ সব clear!")
 
-    elif data == "admin_relogin":
-        if user_id != ADMIN_ID:
-            return
-        await query.edit_message_text("🔄 Re-login করছি...")
-        session_cookie = None
-        result = login_dashboard()
-        await context.bot.send_message(
-            user_id,
-            f"✅ Re-login সফল!\n🔑 Session: `{result[:20]}...`" if result else "❌ Re-login failed!",
-            parse_mode="Markdown"
-        )
-
     elif data == "admin_test":
         if user_id != ADMIN_ID:
             return
-        await query.edit_message_text("🧪 Testing session...")
-        valid = test_session()
-        await context.bot.send_message(user_id, "✅ Session valid!" if valid else "❌ Session invalid!")
+        await query.edit_message_text("🧪 API test করছি...")
+        rows = fetch_all_recent_otps()
+        if rows:
+            await context.bot.send_message(user_id, f"✅ API কাজ করছে!\n📊 {len(rows)} টি SMS পাওয়া গেছে।")
+        else:
+            await context.bot.send_message(user_id, "❌ API কাজ করছে না!\n🔑 API Token চেক করুন।")
 
 async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -491,7 +392,6 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     logger.info("🚀 Starting Bot...")
     load_numbers()
-    login_dashboard()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, upload_numbers))
