@@ -471,6 +471,32 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📢 Broadcast!\n✅ Sent: {sent} | ❌ Failed: {failed}")
         return
 
+    if context.user_data.get("waiting_country_for_upload") and user_id == ADMIN_ID:
+        context.user_data["waiting_country_for_upload"] = False
+        service = context.user_data.get("upload_service", "")
+        code = text.strip()
+        flag = COUNTRY_FLAGS.get(code, "🌍")
+        name = get_country_name(code)
+        context.user_data["upload_country"] = code
+        await update.message.reply_text(
+            f"✅ দেশ: *{flag} {name}* (`{code}`)\n\nএখন *{SERVICE_EMOJI.get(service,'')} {service}* এর TXT/CSV file পাঠান।",
+            parse_mode="Markdown"
+        )
+        return
+
+    if context.user_data.get("waiting_country_for_add") and user_id == ADMIN_ID:
+        context.user_data["waiting_country_for_add"] = False
+        service = context.user_data.pop("pending_add_service", "")
+        code = text.strip()
+        flag = COUNTRY_FLAGS.get(code, "🌍")
+        name = get_country_name(code)
+        context.user_data["add_number_mode"] = (service, code)
+        await update.message.reply_text(
+            f"✅ দেশ: *{flag} {name}* (`{code}`)\n\nএখন number গুলো পাঠান (space বা comma দিয়ে):",
+            parse_mode="Markdown"
+        )
+        return
+
     if context.user_data.get("ban_mode") and user_id == ADMIN_ID:
         context.user_data["ban_mode"] = False
         try:
