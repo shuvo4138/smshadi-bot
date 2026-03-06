@@ -120,6 +120,7 @@ def get_session():
     return session_cookie
 
 def fetch_otp_for_number(number: str):
+    global session_cookie
     cookie = get_session()
     if not cookie:
         return None
@@ -149,7 +150,6 @@ def fetch_otp_for_number(number: str):
                         "number": clean_num
                     }
         elif resp.status_code in [302, 401, 403]:
-            global session_cookie
             session_cookie = None
             login_dashboard()
     except Exception as e:
@@ -157,6 +157,7 @@ def fetch_otp_for_number(number: str):
     return None
 
 def fetch_all_recent_otps():
+    global session_cookie
     cookie = get_session()
     if not cookie:
         return []
@@ -179,7 +180,6 @@ def fetch_all_recent_otps():
             logger.info(f"✅ Got {len(rows)} rows")
             return rows
         elif resp.status_code in [302, 401, 403]:
-            global session_cookie
             session_cookie = None
             login_dashboard()
     except Exception as e:
@@ -195,14 +195,6 @@ def get_flag(number: str) -> str:
         if prefix in COUNTRY_FLAGS:
             return COUNTRY_FLAGS[prefix]
     return "🌍"
-
-def get_country_code(number: str) -> str:
-    number = number.lstrip("+").strip()
-    for length in [4, 3, 2, 1]:
-        prefix = number[:length]
-        if prefix in COUNTRY_NAMES:
-            return prefix
-    return "unknown"
 
 def get_country_name(code: str) -> str:
     return COUNTRY_NAMES.get(code, code)
@@ -479,7 +471,7 @@ async def show_admin_panel(update, context):
             [InlineKeyboardButton("➕ Number যোগ", callback_data="admin_add_num"),
              InlineKeyboardButton("📋 Number List", callback_data="admin_numlist")],
             [InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast"),
-             InlineKeyboardButton("🧪 Test API", callback_data="admin_test")],
+             InlineKeyboardButton("🧪 Test Dashboard", callback_data="admin_test")],
             [InlineKeyboardButton("🔴 Live OTP", callback_data="admin_live_otp"),
              InlineKeyboardButton("📤 File Upload", callback_data="admin_upload")],
             [InlineKeyboardButton("🗑 Clear", callback_data="admin_clear"),
@@ -545,7 +537,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             banned_users.add(target)
             save_data()
             await update.message.reply_text(f"🚫 `{target}` ban!", parse_mode="Markdown")
-        except:
+        except Exception:
             await update.message.reply_text("❌ Valid User ID দিন।")
         return
 
@@ -556,7 +548,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             banned_users.discard(target)
             save_data()
             await update.message.reply_text(f"✅ `{target}` unban!", parse_mode="Markdown")
-        except:
+        except Exception:
             await update.message.reply_text("❌ Valid User ID দিন।")
         return
 
@@ -786,7 +778,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, "🧪 Dashboard test করছি...")
         rows = fetch_all_recent_otps()
         if rows:
-            await context.bot.send_message(user_id, f"✅ Dashboard কাজ করছে!\n📊 {len(rows)}টি SMS।\nCookie: `{session_cookie[:15] if session_cookie else 'None'}...`", parse_mode="Markdown")
+            await context.bot.send_message(user_id,
+                f"✅ Dashboard কাজ করছে!\n📊 {len(rows)}টি SMS।\nCookie: `{session_cookie[:15] if session_cookie else 'None'}...`",
+                parse_mode="Markdown")
         else:
             await context.bot.send_message(user_id, "❌ Dashboard কাজ করছে না! Re-Login করুন।")
 
@@ -833,7 +827,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, "🔄 Re-login করছি...")
         result = login_dashboard()
         if result:
-            await context.bot.send_message(user_id, f"✅ Re-login সফল!\nCookie: `{result[:15]}...`", parse_mode="Markdown")
+            await context.bot.send_message(user_id,
+                f"✅ Re-login সফল!\nCookie: `{result[:15]}...`", parse_mode="Markdown")
         else:
             await context.bot.send_message(user_id, "❌ Re-login failed!")
 
@@ -853,7 +848,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("➕ Number যোগ", callback_data="admin_add_num"),
                  InlineKeyboardButton("📋 Number List", callback_data="admin_numlist")],
                 [InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast"),
-                 InlineKeyboardButton("🧪 Test API", callback_data="admin_test")],
+                 InlineKeyboardButton("🧪 Test Dashboard", callback_data="admin_test")],
                 [InlineKeyboardButton("🔴 Live OTP", callback_data="admin_live_otp"),
                  InlineKeyboardButton("📤 File Upload", callback_data="admin_upload")],
                 [InlineKeyboardButton("🗑 Clear", callback_data="admin_clear"),
