@@ -296,6 +296,7 @@ def save_data():
             "otp_history": otp_history,
             "banned_users": list(banned_users),
             "all_users": list(all_users),
+            "otp_cache": {k: v.isoformat() for k, v in otp_cache.items()},
         }
         with open(DATA_FILE, "w") as f:
             json.dump(data, f)
@@ -313,6 +314,14 @@ def load_data():
             otp_history = data.get("otp_history", {})
             banned_users = set(data.get("banned_users", []))
             all_users = set(data.get("all_users", []))
+            # cache load করো — 30 মিনিটের বেশি পুরনো বাদ দাও
+            raw_cache = data.get("otp_cache", {})
+            now = datetime.now()
+            otp_cache.update({
+                k: datetime.fromisoformat(v)
+                for k, v in raw_cache.items()
+                if now - datetime.fromisoformat(v) < timedelta(hours=2)
+            })
     except Exception as e:
         logger.error(f"Data load error: {e}")
 
@@ -355,11 +364,7 @@ async def is_member(bot, user_id: int) -> bool:
 # ─── Polling Job ─────────────────────────────────────────────────
 
 async def poll_otps(context):
-    global last_poll_time
-    now = datetime.utcnow()
     rows = fetch_all_recent_otps()
-    new_last_time = last_poll_time[0]
-
     for row in rows:
         try:
             dt_str = row.get("dt", "")
@@ -368,26 +373,6 @@ async def poll_otps(context):
             message = row.get("message", "")
             if not message or not number:
                 continue
-
-            # datetime parse করো
-            try:
-                row_time = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-            except:
-                row_time = None
-
-            # প্রথমবার চললে current time set করো, পুরনো OTP skip করো
-            if last_poll_time[0] is None:
-                if new_last_time is None or (row_time and row_time > new_last_time):
-                    new_last_time = row_time
-                continue
-
-            # পুরনো OTP skip
-            if row_time and last_poll_time[0] and row_time <= last_poll_time[0]:
-                continue
-
-            # নতুন last time track করো
-            if new_last_time is None or (row_time and row_time > new_last_time):
-                new_last_time = row_time
 
             cache_key = f"{number}:{dt_str}:{message[:30]}"
             if cache_key in otp_cache:
@@ -433,10 +418,6 @@ async def poll_otps(context):
                     logger.error(f"User notify error: {e}")
         except Exception as e:
             logger.error(f"OTP process error: {e}")
-
-    # last poll time update করো
-    if new_last_time:
-        last_poll_time[0] = new_last_time
     save_data()
 
 # ─── Handlers ────────────────────────────────────────────────────
