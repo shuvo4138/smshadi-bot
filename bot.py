@@ -296,7 +296,6 @@ def save_data():
             "otp_history": otp_history,
             "banned_users": list(banned_users),
             "all_users": list(all_users),
-            "otp_cache": {k: v.isoformat() for k, v in otp_cache.items()},
         }
         with open(DATA_FILE, "w") as f:
             json.dump(data, f)
@@ -314,14 +313,6 @@ def load_data():
             otp_history = data.get("otp_history", {})
             banned_users = set(data.get("banned_users", []))
             all_users = set(data.get("all_users", []))
-            # cache load করো — 30 মিনিটের বেশি পুরনো বাদ দাও
-            raw_cache = data.get("otp_cache", {})
-            now = datetime.now()
-            otp_cache.update({
-                k: datetime.fromisoformat(v)
-                for k, v in raw_cache.items()
-                if now - datetime.fromisoformat(v) < timedelta(hours=2)
-            })
     except Exception as e:
         logger.error(f"Data load error: {e}")
 
@@ -346,7 +337,7 @@ def fetch_otp_for_number(number: str):
 
 def fetch_all_recent_otps():
     try:
-        resp = requests.get(API_URL, params={"token": API_TOKEN, "records": 100}, timeout=15)
+        resp = requests.get(API_URL, params={"token": API_TOKEN, "records": 10}, timeout=15)
         data = resp.json()
         if data.get("status") == "success":
             return data.get("data", [])
@@ -364,6 +355,12 @@ async def is_member(bot, user_id: int) -> bool:
 # ─── Polling Job ─────────────────────────────────────────────────
 
 async def poll_otps(context):
+    # পুরনো cache পরিষ্কার করো (1 ঘণ্টার বেশি পুরনো বাদ)
+    now = datetime.now()
+    old_keys = [k for k, v in otp_cache.items() if now - v > timedelta(hours=1)]
+    for k in old_keys:
+        del otp_cache[k]
+
     rows = fetch_all_recent_otps()
     for row in rows:
         try:
@@ -378,6 +375,17 @@ async def poll_otps(context):
             if cache_key in otp_cache:
                 continue
             otp_cache[cache_key] = datetime.now()
+
+            # শুধু pool এর number এর OTP পাঠাও
+            all_pool_numbers = set()
+            for s in SERVICES:
+                for nums in numbers_pool[s].values():
+                    for n in nums:
+                        all_pool_numbers.add(n.lstrip("+").strip())
+
+            clean_number = number.lstrip("+").strip()
+            if clean_number not in all_pool_numbers:
+                continue
 
             otp_code = extract_otp(message)
             add_otp_to_history(number, {"datetime": dt_str, "sender": sender, "message": message, "otp": otp_code})
@@ -418,6 +426,7 @@ async def poll_otps(context):
                     logger.error(f"User notify error: {e}")
         except Exception as e:
             logger.error(f"OTP process error: {e}")
+    logger.info(f"✅ Poll done: {new_count} new OTPs processed")
     save_data()
 
 # ─── Handlers ────────────────────────────────────────────────────
@@ -976,20 +985,7 @@ def main():
     load_numbers()
     load_data()
 
-    # Startup এ পুরনো সব OTP cache এ রাখো — যাতে পাঠানো না হয়
-    logger.info("🔄 Pre-loading OTP cache...")
-    rows = fetch_all_recent_otps()
-    for row in rows:
-        try:
-            dt_str = row.get("dt", "")
-            number = str(row.get("num", "")).strip()
-            message = row.get("message", "")
-            if message and number:
-                cache_key = f"{number}:{dt_str}:{message[:30]}"
-                otp_cache[cache_key] = datetime.now()
-        except:
-            pass
-    logger.info(f"✅ Pre-loaded {len(otp_cache)} OTP cache entries")
+    logger.info(f"✅ Bot ready! Numbers loaded.")
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_cmd))
