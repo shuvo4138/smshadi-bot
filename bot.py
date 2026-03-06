@@ -362,6 +362,7 @@ async def poll_otps(context):
         del otp_cache[k]
 
     rows = fetch_all_recent_otps()
+    new_count = 0
     for row in rows:
         try:
             dt_str = row.get("dt", "")
@@ -404,6 +405,7 @@ async def poll_otps(context):
                     parse_mode="Markdown"
                 )
                 await asyncio.sleep(0.5)
+                new_count += 1
             except Exception as e:
                 err = str(e)
                 if "Flood control" in err or "flood" in err.lower():
