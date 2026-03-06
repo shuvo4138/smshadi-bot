@@ -21,130 +21,172 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
 OTP_CHANNEL_LINK = os.getenv("OTP_CHANNEL_LINK", "https://t.me/+SWraCXOQrWM4Mzg9").strip()
 JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours").strip()
-API_TOKEN = os.getenv("API_TOKEN", "").strip()
-API_URL = "http://147.135.212.197/crapi/had/viewstats"
+DASHBOARD_BASE = "http://185.2.83.39/ints/agent/SMSDashboard"
+DASHBOARD_USER = os.getenv("DASHBOARD_USER", "shuvo098").strip()
+DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "Shuvo.99@@").strip()
 NUMBERS_FILE = "numbers.json"
 DATA_FILE = "bot_data.json"
 
 SERVICES = ["Facebook", "WhatsApp", "TikTok", "Instagram", "Telegram"]
 SERVICE_EMOJI = {
-    "Facebook": "📘",
-    "WhatsApp": "💬",
-    "TikTok": "🎵",
-    "Instagram": "📸",
-    "Telegram": "✈️",
+    "Facebook": "📘", "WhatsApp": "💬", "TikTok": "🎵",
+    "Instagram": "📸", "Telegram": "✈️",
 }
 
 COUNTRY_FLAGS = {
-    "1242": "🇧🇸", "1268": "🇦🇬", "1345": "🇰🇾", "1441": "🇧🇲", "1473": "🇬🇩",
-    "1649": "🇹🇨", "1664": "🇲🇸", "1670": "🇲🇵", "1671": "🇬🇺", "1684": "🇦🇸",
-    "1721": "🇸🇽", "1758": "🇱🇨", "1767": "🇩🇲", "1784": "🇻🇨", "1809": "🇩🇴",
-    "1868": "🇹🇹", "1869": "🇰🇳", "1876": "🇯🇲",
-    "20": "🇪🇬", "212": "🇲🇦", "213": "🇩🇿", "216": "🇹🇳", "218": "🇱🇾",
-    "220": "🇬🇲", "221": "🇸🇳", "222": "🇲🇷", "223": "🇲🇱", "224": "🇬🇳",
-    "225": "🇨🇮", "226": "🇧🇫", "227": "🇳🇪", "228": "🇹🇬", "229": "🇧🇯",
-    "230": "🇲🇺", "231": "🇱🇷", "232": "🇸🇱", "233": "🇬🇭", "234": "🇳🇬",
-    "235": "🇹🇩", "236": "🇨🇫", "237": "🇨🇲", "238": "🇨🇻", "239": "🇸🇹",
-    "240": "🇬🇶", "241": "🇬🇦", "242": "🇨🇬", "243": "🇨🇩", "244": "🇦🇴",
-    "245": "🇬🇼", "246": "🇮🇴", "247": "🇦🇨", "248": "🇸🇨", "249": "🇸🇩",
-    "250": "🇷🇼", "251": "🇪🇹", "252": "🇸🇴", "253": "🇩🇯", "254": "🇰🇪",
-    "255": "🇹🇿", "256": "🇺🇬", "257": "🇧🇮", "258": "🇲🇿", "260": "🇿🇲",
-    "261": "🇲🇬", "262": "🇷🇪", "263": "🇿🇼", "264": "🇳🇦", "265": "🇲🇼",
-    "266": "🇱🇸", "267": "🇧🇼", "268": "🇸🇿", "269": "🇰🇲",
-    "27": "🇿🇦", "290": "🇸🇭", "291": "🇪🇷", "297": "🇦🇼", "298": "🇫🇴",
-    "299": "🇬🇱", "30": "🇬🇷", "31": "🇳🇱", "32": "🇧🇪", "33": "🇫🇷",
-    "34": "🇪🇸", "350": "🇬🇮", "351": "🇵🇹", "352": "🇱🇺", "353": "🇮🇪",
-    "354": "🇮🇸", "355": "🇦🇱", "356": "🇲🇹", "357": "🇨🇾", "358": "🇫🇮",
-    "359": "🇧🇬", "36": "🇭🇺", "370": "🇱🇹", "371": "🇱🇻", "372": "🇪🇪",
-    "373": "🇲🇩", "374": "🇦🇲", "375": "🇧🇾", "376": "🇦🇩", "377": "🇲🇨",
-    "378": "🇸🇲", "380": "🇺🇦", "381": "🇷🇸", "382": "🇲🇪", "385": "🇭🇷",
-    "386": "🇸🇮", "387": "🇧🇦", "389": "🇲🇰", "39": "🇮🇹", "40": "🇷🇴",
-    "41": "🇨🇭", "420": "🇨🇿", "421": "🇸🇰", "423": "🇱🇮", "43": "🇦🇹",
-    "44": "🇬🇧", "45": "🇩🇰", "46": "🇸🇪", "47": "🇳🇴", "48": "🇵🇱",
-    "49": "🇩🇪", "500": "🇫🇰", "501": "🇧🇿", "502": "🇬🇹", "503": "🇸🇻",
-    "504": "🇭🇳", "505": "🇳🇮", "506": "🇨🇷", "507": "🇵🇦", "508": "🇵🇲",
-    "509": "🇭🇹", "51": "🇵🇪", "52": "🇲🇽", "53": "🇨🇺", "54": "🇦🇷",
-    "55": "🇧🇷", "56": "🇨🇱", "57": "🇨🇴", "58": "🇻🇪", "590": "🇬🇵",
-    "591": "🇧🇴", "592": "🇬🇾", "593": "🇪🇨", "595": "🇵🇾", "597": "🇸🇷",
-    "598": "🇺🇾", "599": "🇨🇼", "60": "🇲🇾", "61": "🇦🇺", "62": "🇮🇩",
-    "63": "🇵🇭", "64": "🇳🇿", "65": "🇸🇬", "66": "🇹🇭", "670": "🇹🇱",
-    "672": "🇳🇫", "673": "🇧🇳", "674": "🇳🇷", "675": "🇵🇬", "676": "🇹🇴",
-    "677": "🇸🇧", "678": "🇻🇺", "679": "🇫🇯", "680": "🇵🇼", "681": "🇼🇫",
-    "682": "🇨🇰", "683": "🇳🇺", "685": "🇼🇸", "686": "🇰🇮", "687": "🇳🇨",
-    "688": "🇹🇻", "689": "🇵🇫", "690": "🇹🇰", "691": "🇫🇲", "692": "🇲🇭",
-    "7": "🇷🇺", "81": "🇯🇵", "82": "🇰🇷", "84": "🇻🇳", "850": "🇰🇵",
-    "852": "🇭🇰", "853": "🇲🇴", "855": "🇰🇭", "856": "🇱🇦", "86": "🇨🇳",
-    "880": "🇧🇩", "886": "🇹🇼", "90": "🇹🇷", "91": "🇮🇳", "92": "🇵🇰",
-    "93": "🇦🇫", "94": "🇱🇰", "95": "🇲🇲", "960": "🇲🇻", "961": "🇱🇧",
-    "962": "🇯🇴", "963": "🇸🇾", "964": "🇮🇶", "965": "🇰🇼", "966": "🇸🇦",
-    "967": "🇾🇪", "968": "🇴🇲", "970": "🇵🇸", "971": "🇦🇪", "972": "🇮🇱",
-    "973": "🇧🇭", "974": "🇶🇦", "975": "🇧🇹", "976": "🇲🇳", "977": "🇳🇵",
-    "992": "🇹🇯", "993": "🇹🇲", "994": "🇦🇿", "995": "🇬🇪", "996": "🇰🇬",
-    "998": "🇺🇿", "959": "🇲🇲", "1": "🇺🇸",
+    "1": "🇺🇸", "7": "🇷🇺", "20": "🇪🇬", "27": "🇿🇦", "30": "🇬🇷",
+    "31": "🇳🇱", "32": "🇧🇪", "33": "🇫🇷", "34": "🇪🇸", "36": "🇭🇺",
+    "39": "🇮🇹", "40": "🇷🇴", "41": "🇨🇭", "43": "🇦🇹", "44": "🇬🇧",
+    "45": "🇩🇰", "46": "🇸🇪", "47": "🇳🇴", "48": "🇵🇱", "49": "🇩🇪",
+    "51": "🇵🇪", "52": "🇲🇽", "53": "🇨🇺", "54": "🇦🇷", "55": "🇧🇷",
+    "56": "🇨🇱", "57": "🇨🇴", "58": "🇻🇪", "60": "🇲🇾", "61": "🇦🇺",
+    "62": "🇮🇩", "63": "🇵🇭", "64": "🇳🇿", "65": "🇸🇬", "66": "🇹🇭",
+    "81": "🇯🇵", "82": "🇰🇷", "84": "🇻🇳", "86": "🇨🇳", "90": "🇹🇷",
+    "91": "🇮🇳", "92": "🇵🇰", "93": "🇦🇫", "94": "🇱🇰", "95": "🇲🇲",
+    "959": "🇲🇲", "880": "🇧🇩", "966": "🇸🇦", "971": "🇦🇪", "972": "🇮🇱",
+    "98": "🇮🇷", "234": "🇳🇬", "254": "🇰🇪", "255": "🇹🇿", "256": "🇺🇬",
 }
 
 COUNTRY_NAMES = {
-    "93": "Afghanistan", "355": "Albania", "213": "Algeria", "376": "Andorra",
-    "244": "Angola", "54": "Argentina", "374": "Armenia", "61": "Australia",
-    "43": "Austria", "994": "Azerbaijan", "973": "Bahrain", "880": "Bangladesh",
-    "375": "Belarus", "32": "Belgium", "501": "Belize", "229": "Benin",
-    "975": "Bhutan", "591": "Bolivia", "387": "Bosnia", "267": "Botswana",
-    "55": "Brazil", "673": "Brunei", "359": "Bulgaria", "226": "Burkina Faso",
-    "257": "Burundi", "855": "Cambodia", "237": "Cameroon", "238": "Cape Verde",
-    "236": "CAR", "235": "Chad", "56": "Chile", "86": "China",
-    "57": "Colombia", "269": "Comoros", "242": "Congo", "243": "DR Congo",
-    "506": "Costa Rica", "385": "Croatia", "53": "Cuba", "357": "Cyprus",
-    "420": "Czech Republic", "45": "Denmark", "253": "Djibouti", "593": "Ecuador",
-    "20": "Egypt", "503": "El Salvador", "240": "Equatorial Guinea", "291": "Eritrea",
-    "372": "Estonia", "251": "Ethiopia", "679": "Fiji", "358": "Finland",
-    "33": "France", "241": "Gabon", "220": "Gambia", "995": "Georgia",
-    "49": "Germany", "233": "Ghana", "30": "Greece", "502": "Guatemala",
-    "224": "Guinea", "245": "Guinea-Bissau", "592": "Guyana", "509": "Haiti",
-    "504": "Honduras", "36": "Hungary", "354": "Iceland", "91": "India",
-    "62": "Indonesia", "98": "Iran", "964": "Iraq", "353": "Ireland",
-    "972": "Israel", "39": "Italy", "81": "Japan", "962": "Jordan",
-    "7": "Russia/Kazakhstan", "254": "Kenya", "82": "South Korea", "965": "Kuwait",
-    "996": "Kyrgyzstan", "856": "Laos", "371": "Latvia", "961": "Lebanon",
-    "266": "Lesotho", "231": "Liberia", "218": "Libya", "370": "Lithuania",
-    "352": "Luxembourg", "261": "Madagascar", "265": "Malawi", "60": "Malaysia",
-    "960": "Maldives", "223": "Mali", "356": "Malta", "222": "Mauritania",
-    "230": "Mauritius", "52": "Mexico", "373": "Moldova", "212": "Morocco",
-    "258": "Mozambique", "95": "Myanmar", "959": "Myanmar", "264": "Namibia",
-    "977": "Nepal", "31": "Netherlands", "64": "New Zealand", "505": "Nicaragua",
-    "227": "Niger", "234": "Nigeria", "47": "Norway", "968": "Oman",
-    "92": "Pakistan", "507": "Panama", "675": "Papua New Guinea", "595": "Paraguay",
-    "51": "Peru", "63": "Philippines", "48": "Poland", "351": "Portugal",
-    "970": "Palestine", "974": "Qatar", "40": "Romania", "250": "Rwanda",
-    "966": "Saudi Arabia", "221": "Senegal", "381": "Serbia", "232": "Sierra Leone",
-    "65": "Singapore", "421": "Slovakia", "386": "Slovenia", "252": "Somalia",
-    "27": "South Africa", "34": "Spain", "94": "Sri Lanka", "249": "Sudan",
-    "597": "Suriname", "46": "Sweden", "41": "Switzerland", "963": "Syria",
-    "886": "Taiwan", "992": "Tajikistan", "255": "Tanzania", "66": "Thailand",
-    "670": "Timor-Leste", "228": "Togo", "676": "Tonga", "1868": "Trinidad",
-    "216": "Tunisia", "90": "Turkey", "993": "Turkmenistan", "256": "Uganda",
-    "380": "Ukraine", "971": "UAE", "44": "UK", "598": "Uruguay",
-    "998": "Uzbekistan", "678": "Vanuatu", "58": "Venezuela", "84": "Vietnam",
-    "967": "Yemen", "260": "Zambia", "263": "Zimbabwe", "1": "USA/Canada",
+    "1": "USA/Canada", "7": "Russia", "20": "Egypt", "27": "South Africa",
+    "30": "Greece", "31": "Netherlands", "32": "Belgium", "33": "France",
+    "34": "Spain", "36": "Hungary", "39": "Italy", "40": "Romania",
+    "41": "Switzerland", "43": "Austria", "44": "UK", "45": "Denmark",
+    "46": "Sweden", "47": "Norway", "48": "Poland", "49": "Germany",
+    "51": "Peru", "52": "Mexico", "53": "Cuba", "54": "Argentina",
+    "55": "Brazil", "56": "Chile", "57": "Colombia", "58": "Venezuela",
+    "60": "Malaysia", "61": "Australia", "62": "Indonesia", "63": "Philippines",
+    "64": "New Zealand", "65": "Singapore", "66": "Thailand", "81": "Japan",
+    "82": "South Korea", "84": "Vietnam", "86": "China", "90": "Turkey",
+    "91": "India", "92": "Pakistan", "93": "Afghanistan", "94": "Sri Lanka",
+    "95": "Myanmar", "959": "Myanmar", "880": "Bangladesh", "966": "Saudi Arabia",
+    "971": "UAE", "972": "Israel", "98": "Iran", "234": "Nigeria",
+    "254": "Kenya", "255": "Tanzania", "256": "Uganda",
 }
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN is not set!")
-    import time
-    time.sleep(10)
-    exit(1)
+    import time; time.sleep(10); exit(1)
 
-# numbers_pool structure: {service: {country_code: [numbers]}}
 numbers_pool = {s: {} for s in SERVICES}
-
-user_numbers = {}   # user_id -> {"number": ..., "service": ..., "country": ...}
-user_history = {}   # user_id -> list of records
-otp_history = {}    # number -> list of otp records
-otp_cache = {}      # cache_key -> datetime
-last_poll_time = [None]  # শেষবার poll এর সময়
+user_numbers = {}
+user_history = {}
+otp_history = {}
+otp_cache = {}
 banned_users = set()
 all_users = set()
+session_cookie = None
 
-# ─── Helpers ─────────────────────────────────────────────────────
+# ─── Dashboard Login ──────────────────────────────────────────────
+
+def login_dashboard():
+    global session_cookie
+    try:
+        session = requests.Session()
+        resp = session.get(
+            "http://185.2.83.39/ints/login",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10
+        )
+        captcha_match = re.search(r'What is (\d+)\s*\+\s*(\d+)', resp.text)
+        if captcha_match:
+            a, b = int(captcha_match.group(1)), int(captcha_match.group(2))
+            captcha_answer = str(a + b)
+            logger.info(f"🔢 Captcha: {a}+{b}={captcha_answer}")
+        else:
+            captcha_answer = "6"
+
+        login_resp = session.post(
+            "http://185.2.83.39/ints/login",
+            data={"username": DASHBOARD_USER, "password": DASHBOARD_PASS, "captcha": captcha_answer},
+            headers={"User-Agent": "Mozilla/5.0"},
+            allow_redirects=True, timeout=10
+        )
+        logger.info(f"🔐 Login: {login_resp.status_code}, URL: {login_resp.url}")
+        if "PHPSESSID" in session.cookies:
+            session_cookie = session.cookies["PHPSESSID"]
+            logger.info(f"✅ Login success: {session_cookie[:15]}...")
+            return session_cookie
+        else:
+            logger.error(f"❌ Login failed: {login_resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"❌ Login error: {e}")
+    return None
+
+def get_session():
+    global session_cookie
+    if not session_cookie:
+        login_dashboard()
+    return session_cookie
+
+def fetch_otp_for_number(number: str):
+    cookie = get_session()
+    if not cookie:
+        return None
+    try:
+        clean_num = number.lstrip("+").strip()
+        resp = requests.get(
+            f"{DASHBOARD_BASE}/res/data_smscdr.php",
+            params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 50, "fnumber": clean_num},
+            headers={
+                "Cookie": f"PHPSESSID={cookie}",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
+                "User-Agent": "Mozilla/5.0"
+            },
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            rows = data.get("aaData", [])
+            if rows:
+                latest = rows[0]
+                if len(latest) >= 6:
+                    return {
+                        "datetime": latest[0],
+                        "sender": str(latest[3] or ""),
+                        "message": str(latest[5] or ""),
+                        "number": clean_num
+                    }
+        elif resp.status_code in [302, 401, 403]:
+            global session_cookie
+            session_cookie = None
+            login_dashboard()
+    except Exception as e:
+        logger.error(f"OTP fetch error: {e}")
+    return None
+
+def fetch_all_recent_otps():
+    cookie = get_session()
+    if not cookie:
+        return []
+    try:
+        resp = requests.get(
+            f"{DASHBOARD_BASE}/res/data_smscdr.php",
+            params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 100},
+            headers={
+                "Cookie": f"PHPSESSID={cookie}",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": f"{DASHBOARD_BASE}/SMSCDRReports",
+                "User-Agent": "Mozilla/5.0"
+            },
+            timeout=10
+        )
+        logger.info(f"📡 CDR: {resp.status_code}, size: {len(resp.text)}")
+        if resp.status_code == 200:
+            data = resp.json()
+            rows = data.get("aaData", [])
+            logger.info(f"✅ Got {len(rows)} rows")
+            return rows
+        elif resp.status_code in [302, 401, 403]:
+            global session_cookie
+            session_cookie = None
+            login_dashboard()
+    except Exception as e:
+        logger.error(f"Recent OTP error: {e}")
+    return []
+
+# ─── Helpers ──────────────────────────────────────────────────────
 
 def get_flag(number: str) -> str:
     number = number.lstrip("+").strip()
@@ -177,7 +219,6 @@ def extract_otp(msg: str) -> str:
     return codes[0] if codes else ""
 
 def get_available_countries(service: str) -> list:
-    """Service এ কোন কোন দেশের number আছে"""
     assigned = {v["number"] for v in user_numbers.values()}
     available = []
     for country_code, nums in numbers_pool.get(service, {}).items():
@@ -191,11 +232,6 @@ def get_available_number(service: str, country_code: str):
     nums = numbers_pool.get(service, {}).get(country_code, [])
     free = [n for n in nums if n not in assigned]
     return random.choice(free) if free else None
-
-def is_cache_fresh(cache_key: str) -> bool:
-    if cache_key not in otp_cache:
-        return False
-    return datetime.now() - otp_cache[cache_key] < timedelta(minutes=30)
 
 def add_otp_to_history(number: str, record: dict):
     if number not in otp_history:
@@ -212,7 +248,7 @@ def service_stats():
         stats[s] = {"total": total, "available": total - busy, "busy": busy}
     return stats
 
-# ─── Keyboards ───────────────────────────────────────────────────
+# ─── Keyboards ────────────────────────────────────────────────────
 
 def get_main_keyboard(user_id):
     buttons = [
@@ -257,7 +293,8 @@ def number_action_keyboard(number: str, service: str, country: str):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔀 Change Number", callback_data=f"country_{service}_{country}"),
          InlineKeyboardButton("📢 OTP Group", url=OTP_CHANNEL_LINK)],
-        [InlineKeyboardButton("🔙 Main Menu", callback_data="get_number")],
+        [InlineKeyboardButton("❌ Release", callback_data="release_number"),
+         InlineKeyboardButton("🔙 Main Menu", callback_data="get_number")],
     ])
 
 async def safe_edit(query, text, parse_mode="Markdown", reply_markup=None):
@@ -267,7 +304,7 @@ async def safe_edit(query, text, parse_mode="Markdown", reply_markup=None):
         if "Message is not modified" not in str(e):
             raise
 
-# ─── Persistence ─────────────────────────────────────────────────
+# ─── Persistence ──────────────────────────────────────────────────
 
 def save_numbers():
     try:
@@ -316,46 +353,9 @@ def load_data():
     except Exception as e:
         logger.error(f"Data load error: {e}")
 
-# ─── API ─────────────────────────────────────────────────────────
-
-def fetch_otp_for_number(number: str):
-    try:
-        clean_num = number.lstrip("+").strip()
-        resp = requests.get(API_URL, params={"token": API_TOKEN, "filternum": clean_num, "records": 10}, timeout=15)
-        data = resp.json()
-        if data.get("status") == "success" and data.get("data"):
-            latest = data["data"][0]
-            return {
-                "datetime": latest.get("dt", ""),
-                "sender": latest.get("cli", "Unknown"),
-                "message": latest.get("message", ""),
-                "number": latest.get("num", clean_num)
-            }
-    except Exception as e:
-        logger.error(f"Fetch OTP error: {e}")
-    return None
-
-def fetch_all_recent_otps():
-    try:
-        resp = requests.get(API_URL, params={"token": API_TOKEN, "records": 10}, timeout=15)
-        data = resp.json()
-        if data.get("status") == "success":
-            return data.get("data", [])
-    except Exception as e:
-        logger.error(f"Polling error: {e}")
-    return []
-
-async def is_member(bot, user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id=OTP_CHANNEL_ID, user_id=user_id)
-        return member.status in ("member", "administrator", "creator")
-    except Exception:
-        return False
-
-# ─── Polling Job ─────────────────────────────────────────────────
+# ─── OTP Polling ──────────────────────────────────────────────────
 
 async def poll_otps(context):
-    # পুরনো cache পরিষ্কার করো (1 ঘণ্টার বেশি পুরনো বাদ)
     now = datetime.now()
     old_keys = [k for k, v in otp_cache.items() if now - v > timedelta(hours=1)]
     for k in old_keys:
@@ -363,12 +363,21 @@ async def poll_otps(context):
 
     rows = fetch_all_recent_otps()
     new_count = 0
+
+    all_pool_numbers = set()
+    for s in SERVICES:
+        for nums in numbers_pool[s].values():
+            for n in nums:
+                all_pool_numbers.add(n.lstrip("+").strip())
+
     for row in rows:
         try:
-            dt_str = row.get("dt", "")
-            number = str(row.get("num", "")).strip()
-            sender = row.get("cli", "Unknown")
-            message = row.get("message", "")
+            if len(row) < 6:
+                continue
+            dt_str = str(row[0])
+            number = str(row[2]).strip()
+            sender = str(row[3] or "Unknown")
+            message = str(row[5] or "")
             if not message or not number:
                 continue
 
@@ -376,13 +385,6 @@ async def poll_otps(context):
             if cache_key in otp_cache:
                 continue
             otp_cache[cache_key] = datetime.now()
-
-            # শুধু pool এর number এর OTP পাঠাও
-            all_pool_numbers = set()
-            for s in SERVICES:
-                for nums in numbers_pool[s].values():
-                    for n in nums:
-                        all_pool_numbers.add(n.lstrip("+").strip())
 
             clean_number = number.lstrip("+").strip()
             if clean_number not in all_pool_numbers:
@@ -411,7 +413,6 @@ async def poll_otps(context):
                 if "Flood control" in err or "flood" in err.lower():
                     match = re.search(r'Retry in (\d+)', err)
                     wait = int(match.group(1)) + 2 if match else 15
-                    logger.warning(f"Flood control, waiting {wait}s...")
                     await asyncio.sleep(wait)
                 else:
                     logger.error(f"Channel error: {e}")
@@ -428,10 +429,19 @@ async def poll_otps(context):
                     logger.error(f"User notify error: {e}")
         except Exception as e:
             logger.error(f"OTP process error: {e}")
-    logger.info(f"✅ Poll done: {new_count} new OTPs processed")
+
+    if new_count:
+        logger.info(f"✅ Poll done: {new_count} new OTPs")
     save_data()
 
-# ─── Handlers ────────────────────────────────────────────────────
+# ─── Handlers ─────────────────────────────────────────────────────
+
+async def is_member(bot, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=OTP_CHANNEL_ID, user_id=user_id)
+        return member.status in ("member", "administrator", "creator")
+    except Exception:
+        return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -439,7 +449,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id in banned_users:
         await update.message.reply_text("❌ আপনি ban হয়েছেন।")
         return
-    # পুরনো keyboard সরাও
     await update.message.reply_text("👋", reply_markup=ReplyKeyboardRemove())
     await update.message.reply_text(
         f"👋 স্বাগতম *{user.first_name}*!\n\n🤖 *SMS Hadi OTP Bot*\n\nService বেছে number নিন এবং OTP receive করুন। 👇",
@@ -458,7 +467,7 @@ async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_admin_panel(update, context):
     stats = service_stats()
     total_otp = sum(len(v) for v in otp_history.values())
-    text = f"👑 *Admin Panel*\n\n👥 Users: {len(all_users)} | 🚫 Banned: {len(banned_users)}\n📨 Total OTP: {total_otp}\n\n*📦 Number Pool:*\n"
+    text = f"👑 *Admin Panel*\n\n👥 Users: {len(all_users)} | 🚫 Banned: {len(banned_users)}\n📨 Total OTP: {total_otp}\n🔑 Session: {'✅' if session_cookie else '❌'}\n\n*📦 Number Pool:*\n"
     for s in SERVICES:
         st = stats[s]
         emoji = SERVICE_EMOJI[s]
@@ -474,7 +483,7 @@ async def show_admin_panel(update, context):
             [InlineKeyboardButton("🔴 Live OTP", callback_data="admin_live_otp"),
              InlineKeyboardButton("📤 File Upload", callback_data="admin_upload")],
             [InlineKeyboardButton("🗑 Clear", callback_data="admin_clear"),
-             InlineKeyboardButton("🚫 Ban/Unban", callback_data="admin_ban_menu")],
+             InlineKeyboardButton("🔄 Re-Login", callback_data="admin_relogin")],
         ])
     )
 
@@ -585,7 +594,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = get_country_name(country)
             emoji = SERVICE_EMOJI.get(service, "")
             await update.message.reply_text(
-                f"📞 *Your Number is Ready!*\n\nTap to copy: `{num}`\n\n✅ Your number is active!\n❗ Go to our OTP Group to see your incoming SMS.\n\n🔖 {emoji} {service} | {flag} {name}",
+                f"📞 *Your Number is Ready!*\n\nTap to copy: `{num}`\n\n✅ Your number is active!\n❗ OTP Group এ incoming SMS দেখুন।\n\n🔖 {emoji} {service} | {flag} {name}",
                 parse_mode="Markdown",
                 reply_markup=number_action_keyboard(num, service, country)
             )
@@ -621,15 +630,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         service = data.replace("service_", "")
         if service not in SERVICES:
             return
-        # Join check
         if not await is_member(context.bot, user_id):
-            await safe_edit(query,
-                f"⚠️ *Number নিতে আগে channel join করুন!*",
+            await safe_edit(query, "⚠️ *Number নিতে আগে channel join করুন!*",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📢 Channel Join করুন", url=JOIN_CHANNEL)],
                     [InlineKeyboardButton("✅ Join করেছি", callback_data=data)],
-                ])
-            )
+                ]))
             return
         kb = country_keyboard(service)
         if not kb:
@@ -645,8 +651,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, service, country_code = parts
         num = get_available_number(service, country_code)
         if not num:
-            await safe_edit(query,
-                f"❌ এই দেশে আর number নেই।",
+            await safe_edit(query, "❌ এই দেশে আর number নেই।",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"service_{service}")]]))
             return
         if user_id in user_numbers:
@@ -661,11 +666,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         name = get_country_name(country_code)
         emoji = SERVICE_EMOJI.get(service, "")
         await safe_edit(query,
-            f"📞 *Your Number is Ready!*\n\n"
-            f"Tap to copy: `{num}`\n\n"
-            f"✅ Your number is active!\n"
-            f"❗ Go to our OTP Group to see your incoming SMS.\n\n"
-            f"🔖 {emoji} {service} | {flag} {name}",
+            f"📞 *Your Number is Ready!*\n\nTap to copy: `{num}`\n\n✅ Your number is active!\n❗ OTP Group এ incoming SMS দেখুন।\n\n🔖 {emoji} {service} | {flag} {name}",
             reply_markup=number_action_keyboard(num, service, country_code)
         )
 
@@ -683,20 +684,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit(query, f"⏳ `{num}` এ এখনো OTP আসেনি।",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 আবার", callback_data=f"refresh_{num}")]]))
 
-    elif data.startswith("history_"):
-        num = data.replace("history_", "")
-        info = user_numbers.get(user_id, {})
-        history = otp_history.get(num, [])
-        if not history:
-            await safe_edit(query, f"📜 কোনো OTP history নেই।",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"refresh_{num}")]]))
-            return
-        text = f"📜 *OTP History*\n📞 `{mask_number(num)}`\n\n"
-        for i, h in enumerate(history[:10], 1):
-            text += f"{i}. 🔐 `{h['otp']}` | {h['sender']} | {h['datetime']}\n"
-        await safe_edit(query, text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"refresh_{num}")]]))
-
     elif data == "release_number":
         if user_id in user_numbers:
             info = user_numbers.pop(user_id)
@@ -706,11 +693,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await safe_edit(query, "❌ কোনো number নেই।")
 
-    # ─── Admin ───
-
     elif data == "admin_users":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         text = f"👥 *Users ({len(all_users)})*\n\n"
         for uid in list(all_users)[:30]:
             info = user_numbers.get(uid, {})
@@ -720,14 +704,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             flag = COUNTRY_FLAGS.get(cc, "")
             banned = "🚫" if uid in banned_users else "✅"
             text += f"{banned} `{uid}` | {svc} {flag} | `{num}`\n"
-        if len(all_users) > 30:
-            text += f"\n...আরো {len(all_users)-30} জন"
-        await safe_edit(query, text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]))
+        await safe_edit(query, text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]))
 
     elif data == "admin_otp_stats":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         total_otp = sum(len(v) for v in otp_history.values())
         text = f"📊 *OTP Stats* — Total: {total_otp}\n\n*সাম্প্রতিক (10):*\n"
         recent = []
@@ -738,16 +718,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for dt, num, otp, sender in recent[:10]:
             flag = get_flag(num)
             text += f"{flag} `{mask_number(num)}` | 🔐 `{otp}` | {sender}\n"
-        await safe_edit(query, text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]))
+        await safe_edit(query, text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]))
 
     elif data == "admin_live_otp":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         await safe_edit(query, "🔴 *Live OTP চেক করছি...*")
         rows = fetch_all_recent_otps()
         if not rows:
-            await context.bot.send_message(user_id, "❌ API থেকে OTP পাওয়া যায়নি।")
+            await context.bot.send_message(user_id, "❌ Dashboard থেকে OTP পাওয়া যায়নি।")
             return
         all_pool_numbers = set()
         for s in SERVICES:
@@ -755,10 +733,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 all_pool_numbers.update(nums)
         text = f"🔴 *Live OTP* (last {min(len(rows),10)})\n\n"
         for row in rows[:10]:
-            num = str(row.get("num", ""))
-            sender = row.get("cli", "?")
-            message = row.get("message", "")
-            dt = row.get("dt", "")
+            if len(row) < 6: continue
+            num = str(row[2])
+            sender = str(row[3] or "?")
+            message = str(row[5] or "")
+            dt = str(row[0])
             otp = extract_otp(message)
             flag = get_flag(num)
             in_pool = "✅" if num in all_pool_numbers else "❌"
@@ -766,32 +745,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(user_id, text, parse_mode="Markdown")
 
     elif data == "admin_add_num":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         buttons = [[InlineKeyboardButton(f"{SERVICE_EMOJI[s]} {s}", callback_data=f"addnum_{s}")] for s in SERVICES]
         buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
         await safe_edit(query, "➕ কোন service এ number যোগ করবেন?", reply_markup=InlineKeyboardMarkup(buttons))
 
     elif data.startswith("addnum_"):
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         service = data.replace("addnum_", "")
         context.user_data["pending_add_service"] = service
-        await safe_edit(query,
-            f"➕ *{SERVICE_EMOJI.get(service,'')} {service}*\n\nকোন দেশের number?\nদেশের code দিন (যেমন: `95` Myanmar, `51` Peru, `93` Afghanistan)",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_add_num")]]))
         context.user_data["waiting_country_for_add"] = True
+        await safe_edit(query,
+            f"➕ *{SERVICE_EMOJI.get(service,'')} {service}*\n\nদেশের code দিন (যেমন: `95` Myanmar, `880` Bangladesh):",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_add_num")]]))
 
     elif data == "admin_numlist":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         assigned_nums = {v["number"] for v in user_numbers.values()}
         text = "📋 *Number List*\n\n"
         for s in SERVICES:
             emoji = SERVICE_EMOJI[s]
             countries = numbers_pool[s]
-            if not countries:
-                continue
+            if not countries: continue
             text += f"{emoji} *{s}*\n"
             for cc, nums in countries.items():
                 flag = COUNTRY_FLAGS.get(cc, "🌍")
@@ -799,94 +774,74 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 free = sum(1 for n in nums if n not in assigned_nums)
                 text += f"  {flag} {name}: {len(nums)} total | 🟢 {free}\n"
             text += "\n"
-        await safe_edit(query, text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]))
+        await safe_edit(query, text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]))
 
     elif data == "admin_broadcast":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         context.user_data["broadcast_mode"] = True
         await safe_edit(query, f"📢 *Broadcast*\n{len(all_users)} জন user কে message যাবে। এখন পাঠান:")
 
     elif data == "admin_test":
-        if user_id != ADMIN_ID:
-            return
-        await safe_edit(query, "🧪 API test করছি...")
+        if user_id != ADMIN_ID: return
+        await safe_edit(query, "🧪 Dashboard test করছি...")
         rows = fetch_all_recent_otps()
         if rows:
-            await context.bot.send_message(user_id, f"✅ API কাজ করছে!\n📊 {len(rows)}টি SMS।")
+            await context.bot.send_message(user_id, f"✅ Dashboard কাজ করছে!\n📊 {len(rows)}টি SMS।\nCookie: `{session_cookie[:15] if session_cookie else 'None'}...`", parse_mode="Markdown")
         else:
-            await context.bot.send_message(user_id, "❌ API কাজ করছে না!")
+            await context.bot.send_message(user_id, "❌ Dashboard কাজ করছে না! Re-Login করুন।")
 
     elif data == "admin_upload":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         buttons = [[InlineKeyboardButton(f"{SERVICE_EMOJI[s]} {s}", callback_data=f"upload_{s}")] for s in SERVICES]
         buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
         await safe_edit(query, "📤 কোন service এর জন্য file upload করবেন?", reply_markup=InlineKeyboardMarkup(buttons))
 
     elif data.startswith("upload_"):
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         service = data.replace("upload_", "")
         context.user_data["upload_service"] = service
-        await safe_edit(query,
-            f"📤 *{SERVICE_EMOJI.get(service,'')} {service}*\n\nকোন দেশের number?\nদেশের code দিন (যেমন: `95` Myanmar, `51` Peru):",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_upload")]]))
         context.user_data["waiting_country_for_upload"] = True
+        await safe_edit(query,
+            f"📤 *{SERVICE_EMOJI.get(service,'')} {service}*\n\nদেশের code দিন (যেমন: `95` Myanmar, `880` Bangladesh):",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_upload")]]))
 
     elif data == "admin_clear":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         buttons = [[InlineKeyboardButton(f"{SERVICE_EMOJI[s]} {s}", callback_data=f"clear_{s}")] for s in SERVICES]
         buttons.append([InlineKeyboardButton("🗑 সব clear", callback_data="clear_ALL")])
         buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
         await safe_edit(query, "🗑 কোনটা clear করবেন?", reply_markup=InlineKeyboardMarkup(buttons))
 
     elif data.startswith("clear_"):
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         target = data.replace("clear_", "")
         if target == "ALL":
             for s in SERVICES:
                 numbers_pool[s].clear()
             user_numbers.clear()
-            save_numbers()
-            save_data()
+            save_numbers(); save_data()
             await safe_edit(query, "✅ সব clear!")
         elif target in SERVICES:
             numbers_pool[target].clear()
             save_numbers()
             await safe_edit(query, f"✅ *{target}* clear!")
 
-    elif data == "admin_ban_menu":
-        if user_id != ADMIN_ID:
-            return
-        await safe_edit(query, "🚫 *Ban/Unban*",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🚫 Ban", callback_data="admin_ban"),
-                 InlineKeyboardButton("✅ Unban", callback_data="admin_unban")],
-                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
-            ]))
-
-    elif data == "admin_ban":
-        if user_id != ADMIN_ID:
-            return
-        context.user_data["ban_mode"] = True
-        await context.bot.send_message(user_id, "🚫 Ban করতে User ID পাঠান:")
-
-    elif data == "admin_unban":
-        if user_id != ADMIN_ID:
-            return
-        context.user_data["unban_mode"] = True
-        await context.bot.send_message(user_id, "✅ Unban করতে User ID পাঠান:")
+    elif data == "admin_relogin":
+        if user_id != ADMIN_ID: return
+        global session_cookie
+        session_cookie = None
+        await safe_edit(query, "🔄 Re-login করছি...")
+        result = login_dashboard()
+        if result:
+            await context.bot.send_message(user_id, f"✅ Re-login সফল!\nCookie: `{result[:15]}...`", parse_mode="Markdown")
+        else:
+            await context.bot.send_message(user_id, "❌ Re-login failed!")
 
     elif data == "admin_back":
-        if user_id != ADMIN_ID:
-            return
+        if user_id != ADMIN_ID: return
         stats = service_stats()
         total_otp = sum(len(v) for v in otp_history.values())
-        text = f"👑 *Admin Panel*\n\n👥 Users: {len(all_users)} | 🚫 Banned: {len(banned_users)}\n📨 Total OTP: {total_otp}\n\n*📦 Number Pool:*\n"
+        text = f"👑 *Admin Panel*\n\n👥 Users: {len(all_users)} | 🚫 Banned: {len(banned_users)}\n📨 Total OTP: {total_otp}\n🔑 Session: {'✅' if session_cookie else '❌'}\n\n*📦 Number Pool:*\n"
         for s in SERVICES:
             st = stats[s]
             emoji = SERVICE_EMOJI[s]
@@ -902,9 +857,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🔴 Live OTP", callback_data="admin_live_otp"),
                  InlineKeyboardButton("📤 File Upload", callback_data="admin_upload")],
                 [InlineKeyboardButton("🗑 Clear", callback_data="admin_clear"),
-                 InlineKeyboardButton("🚫 Ban/Unban", callback_data="admin_ban_menu")],
+                 InlineKeyboardButton("🔄 Re-Login", callback_data="admin_relogin")],
             ])
         )
+
+    elif data == "admin_ban_menu":
+        if user_id != ADMIN_ID: return
+        await safe_edit(query, "🚫 *Ban/Unban*",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🚫 Ban", callback_data="admin_ban"),
+                 InlineKeyboardButton("✅ Unban", callback_data="admin_unban")],
+                [InlineKeyboardButton("🔙 Back", callback_data="admin_back")],
+            ]))
+
+    elif data == "admin_ban":
+        if user_id != ADMIN_ID: return
+        context.user_data["ban_mode"] = True
+        await context.bot.send_message(user_id, "🚫 Ban করতে User ID পাঠান:")
+
+    elif data == "admin_unban":
+        if user_id != ADMIN_ID: return
+        context.user_data["unban_mode"] = True
+        await context.bot.send_message(user_id, "✅ Unban করতে User ID পাঠান:")
 
 # ─── File Upload ──────────────────────────────────────────────────
 
@@ -913,21 +887,14 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if not update.message.document:
         return
-
-    # Country code waiting
     if context.user_data.get("waiting_country_for_upload"):
         await update.message.reply_text("❌ আগে দেশের code দিন, তারপর file পাঠান।")
         return
-
     service = context.user_data.pop("upload_service", None)
     country_code = context.user_data.pop("upload_country", None)
-
     if not service or not country_code:
-        buttons = [[InlineKeyboardButton(f"{SERVICE_EMOJI[s]} {s}", callback_data=f"upload_{s}")] for s in SERVICES]
-        await update.message.reply_text("❓ আগে Admin Panel → File Upload → Service এবং দেশ select করুন।",
-            reply_markup=InlineKeyboardMarkup(buttons))
+        await update.message.reply_text("❓ Admin Panel → File Upload → Service এবং দেশ select করুন।")
         return
-
     doc = update.message.document
     file = await doc.get_file()
     content = await file.download_as_bytearray()
@@ -950,51 +917,21 @@ async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-async def handle_country_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Country code input handler — upload এবং add number দুইটার জন্য"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-    text = update.message.text.strip()
-
-    if context.user_data.get("waiting_country_for_upload"):
-        context.user_data["waiting_country_for_upload"] = False
-        service = context.user_data.get("upload_service", "")
-        flag = COUNTRY_FLAGS.get(text, "🌍")
-        name = get_country_name(text)
-        context.user_data["upload_country"] = text
-        await update.message.reply_text(
-            f"✅ দেশ: *{flag} {name}*\n\nএখন *{SERVICE_EMOJI.get(service,'')} {service}* এর জন্য TXT/CSV file পাঠান।",
-            parse_mode="Markdown"
-        )
-        return
-
-    if context.user_data.get("waiting_country_for_add"):
-        context.user_data["waiting_country_for_add"] = False
-        service = context.user_data.pop("pending_add_service", "")
-        flag = COUNTRY_FLAGS.get(text, "🌍")
-        name = get_country_name(text)
-        context.user_data["add_number_mode"] = (service, text)
-        await update.message.reply_text(
-            f"✅ দেশ: *{flag} {name}*\n\nএখন number গুলো পাঠান (space বা comma দিয়ে):",
-            parse_mode="Markdown"
-        )
-        return
-
 # ─── Main ─────────────────────────────────────────────────────────
 
 def main():
     logger.info("🚀 Starting Bot...")
     load_numbers()
     load_data()
-
-    logger.info(f"✅ Bot ready! Numbers loaded.")
+    logger.info("🔐 Dashboard login করছি...")
+    login_dashboard()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_cmd))
     app.add_handler(MessageHandler(filters.Document.ALL, upload_numbers))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.job_queue.run_repeating(poll_otps, interval=30, first=5, job_kwargs={"max_instances": 1})
+    app.job_queue.run_repeating(poll_otps, interval=15, first=5, job_kwargs={"max_instances": 1})
     logger.info("✅ Bot running!")
     app.run_polling(drop_pending_updates=True)
 
