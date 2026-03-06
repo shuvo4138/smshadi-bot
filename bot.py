@@ -249,6 +249,15 @@ def load_data():
 
 # ─── Keyboards ────────────────────────────────────────────────────
 
+def main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    """Bottom reply keyboard — shown after /start"""
+    buttons = [
+        [KeyboardButton("📲 Get Number"), KeyboardButton("📋 Active Number")],
+    ]
+    if user_id == ADMIN_ID:
+        buttons.append([KeyboardButton("👑 Admin Panel")])
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
 def service_keyboard():
     buttons = []
     for s in SERVICES:
@@ -266,6 +275,15 @@ def country_keyboard(service: str):
         name = COUNTRY_NAMES.get(code, code)
         buttons.append([InlineKeyboardButton(f"{flag} {name}", callback_data=f"country_{service}_{code}")])
     buttons.append([InlineKeyboardButton("🔙 Back", callback_data="get_number")])
+    return InlineKeyboardMarkup(buttons)
+
+def admin_keyboard():
+    buttons = [
+        [InlineKeyboardButton("📊 Stats", callback_data="admin_stats")],
+        [InlineKeyboardButton("📤 Upload Numbers", callback_data="admin_upload")],
+        [InlineKeyboardButton("👥 All Users", callback_data="admin_users")],
+        [InlineKeyboardButton("🔄 Re-login Dashboard", callback_data="admin_relogin")],
+    ]
     return InlineKeyboardMarkup(buttons)
 
 # ─── OTP Polling ──────────────────────────────────────────────────
@@ -339,8 +357,63 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 Welcome *{user.first_name}*!\n\n🤖 *SMS Hadi OTP Bot*\n\nSelect a service to get a number 👇",
         parse_mode="Markdown",
-        reply_markup=service_keyboard()
+        reply_markup=main_keyboard(user.id)
     )
+
+async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the 3 reply keyboard buttons"""
+    user = update.effective_user
+    text = update.message.text.strip()
+
+    # ── 📲 Get Number ──
+    if text == "📲 Get Number":
+        await update.message.reply_text(
+            "📲 *Select Service:*",
+            parse_mode="Markdown",
+            reply_markup=service_keyboard()
+        )
+
+    # ── 📋 Active Number ──
+    elif text == "📋 Active Number":
+        if user.id in user_numbers:
+            info = user_numbers[user.id]
+            num = info["number"]
+            service = info["service"]
+            country = info.get("country", "")
+            flag = COUNTRY_FLAGS.get(country, get_flag(num))
+            await update.message.reply_text(
+                f"📋 *Your Active Number:*\n\n`{num}`\n\n{flag} {service}\n\n✅ Waiting for OTP...",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 OTP Channel", url=OTP_CHANNEL_LINK)],
+                    [InlineKeyboardButton("❌ Release", callback_data="release")],
+                ])
+            )
+        else:
+            await update.message.reply_text(
+                "❌ You don't have an active number.\n\nPress *📲 Get Number* to get one.",
+                parse_mode="Markdown"
+            )
+
+    # ── 👑 Admin Panel ──
+    elif text == "👑 Admin Panel":
+        if user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Access denied.")
+            return
+        total_numbers = sum(
+            len(nums)
+            for s in SERVICES
+            for nums in numbers_pool[s].values()
+        )
+        await update.message.reply_text(
+            f"👑 *Admin Panel*\n\n"
+            f"👥 Total Users: `{len(all_users)}`\n"
+            f"📞 Active Assignments: `{len(user_numbers)}`\n"
+            f"📱 Total Numbers: `{total_numbers}`\n"
+            f"🚫 Banned: `{len(banned_users)}`",
+            parse_mode="Markdown",
+            reply_markup=admin_keyboard()
+        )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -390,11 +463,123 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data()
             await query.edit_message_text("✅ Number released", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📲 Get New", callback_data="get_number")]]))
 
+    # ── Admin callbacks ──
+    elif data == "admin_stats":
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        total_numbers = sum(len(nums) for s in SERVICES for nums in numbers_pool[s].values())
+        await query.edit_message_text(
+            f"📊 *Stats*\n\n"
+            f"👥 Total Users: `{len(all_users)}`\n"
+            f"📞 Active Assignments: `{len(user_numbers)}`\n"
+            f"📱 Total Numbers: `{total_numbers}`\n"
+            f"🚫 Banned: `{len(banned_users)}`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
+        )
+
+    elif data == "admin_users":
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        user_list = "\n".join([f"`{uid}`" for uid in list(all_users)[:20]])
+        await query.edit_message_text(
+            f"👥 *Users (first 20):*\n\n{user_list or 'No users yet'}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
+        )
+
+    elif data == "admin_relogin":
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        global session_cookie
+        session_cookie = None
+        result = login_dashboard()
+        status = "✅ Re-login successful!" if result else "❌ Re-login failed!"
+        await query.edit_message_text(
+            status,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
+        )
+
+    elif data == "admin_upload":
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        await query.edit_message_text(
+            "📤 *Upload Numbers*\n\nSend: `/addnumbers <service> <country_code>`\n\nExample:\n`/addnumbers WhatsApp 95`\n\nThen send numbers one per line.",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
+        )
+
+    elif data == "admin_back":
+        if user_id != ADMIN_ID:
+            return
+        total_numbers = sum(len(nums) for s in SERVICES for nums in numbers_pool[s].values())
+        await query.edit_message_text(
+            f"👑 *Admin Panel*\n\n"
+            f"👥 Total Users: `{len(all_users)}`\n"
+            f"📞 Active Assignments: `{len(user_numbers)}`\n"
+            f"📱 Total Numbers: `{total_numbers}`\n"
+            f"🚫 Banned: `{len(banned_users)}`",
+            parse_mode="Markdown",
+            reply_markup=admin_keyboard()
+        )
+
 async def upload_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    
     await update.message.reply_text("📤 Send: service,country_code then file\nExample: WhatsApp,95")
+
+async def add_numbers_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command: /addnumbers <service> <country_code>"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("Usage: /addnumbers <service> <country_code>")
+        return
+    service = args[0].capitalize()
+    country_code = args[1]
+    if service not in SERVICES:
+        await update.message.reply_text(f"❌ Invalid service. Use: {', '.join(SERVICES)}")
+        return
+    context.user_data["pending_upload"] = {"service": service, "country": country_code}
+    await update.message.reply_text(
+        f"✅ Ready! Now send numbers for *{service}* / `{country_code}` (one per line):",
+        parse_mode="Markdown"
+    )
+
+async def handle_number_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle pasted numbers after /addnumbers"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    pending = context.user_data.get("pending_upload")
+    if not pending:
+        return
+    text = update.message.text.strip()
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    numbers = [l if l.startswith("+") else f"+{l}" for l in lines if re.match(r'^\+?\d{7,15}$', l)]
+    if not numbers:
+        await update.message.reply_text("❌ No valid numbers found.")
+        return
+    service = pending["service"]
+    country = pending["country"]
+    if country not in numbers_pool[service]:
+        numbers_pool[service][country] = []
+    added = 0
+    for n in numbers:
+        if n not in numbers_pool[service][country]:
+            numbers_pool[service][country].append(n)
+            added += 1
+    save_numbers()
+    context.user_data.pop("pending_upload", None)
+    await update.message.reply_text(
+        f"✅ Added *{added}* numbers for *{service}* / `{country}`\n"
+        f"📱 Total: `{len(numbers_pool[service][country])}`",
+        parse_mode="Markdown"
+    )
 
 # ─── Main ─────────────────────────────────────────────────────────
 
@@ -406,7 +591,21 @@ def main():
     
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("addnumbers", add_numbers_command))
     app.add_handler(CallbackQueryHandler(button_handler))
+
+    # Reply keyboard buttons handler (must be before generic text handler)
+    app.add_handler(MessageHandler(
+        filters.TEXT & filters.Regex(r'^(📲 Get Number|📋 Active Number|👑 Admin Panel)$'),
+        reply_keyboard_handler
+    ))
+
+    # Number upload handler for admin (after /addnumbers)
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        handle_number_upload
+    ))
+
     app.job_queue.run_repeating(poll_otps, interval=15, first=5)
     
     logger.info("✅ Bot running!")
