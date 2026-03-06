@@ -444,6 +444,7 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
         )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global numbers_pool, session_cookie
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -522,7 +523,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID:
             await query.answer("❌ Access denied", show_alert=True)
             return
-        global session_cookie
         session_cookie = None
         result = login_dashboard()
         status = "✅ Re-login successful!" if result else "❌ Re-login failed!"
@@ -633,7 +633,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID:
             await query.answer("❌ Access denied", show_alert=True)
             return
-        global numbers_pool
         numbers_pool = {s: {} for s in SERVICES}
         save_numbers()
         await query.edit_message_text(
