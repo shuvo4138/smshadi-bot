@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
+OTP_CHANNEL_LINK = os.getenv("OTP_CHANNEL_LINK", "https://t.me/+SWraCXOQrWM4Mzg9").strip()
 JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours").strip()
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 API_URL = "http://147.135.212.197/crapi/had/viewstats"
@@ -259,7 +260,7 @@ def number_action_keyboard(number: str, service: str):
          InlineKeyboardButton("📜 OTP History", callback_data=f"history_{number}")],
         [InlineKeyboardButton("🔀 Change Number", callback_data=f"change_{service}"),
          InlineKeyboardButton("❌ Number ছাড়ুন", callback_data="release_number")],
-        [InlineKeyboardButton("📢 OTP Group", url=JOIN_CHANNEL),
+        [InlineKeyboardButton("📢 OTP Group", url=OTP_CHANNEL_LINK),
          InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")],
     ])
 
@@ -322,7 +323,7 @@ async def poll_otps(context):
                         ),
                         parse_mode="Markdown",
                         reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("📢 OTP Group", url=JOIN_CHANNEL)],
+                            [InlineKeyboardButton("📢 OTP Group", url=OTP_CHANNEL_LINK)],
                             [InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{number}")]
                         ])
                     )
@@ -345,7 +346,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("📲 Number নিন", callback_data="get_number")],
-            [InlineKeyboardButton("📢 OTP Group", url=JOIN_CHANNEL)],
+            [InlineKeyboardButton("📢 OTP Group", url=OTP_CHANNEL_LINK)],
         ])
     )
     await update.message.reply_text("Menu:", reply_markup=get_user_keyboard(user.id))
