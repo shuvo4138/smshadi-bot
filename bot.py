@@ -975,6 +975,21 @@ def main():
     logger.info("🚀 Starting Bot...")
     load_numbers()
     load_data()
+
+    # Startup এ পুরনো সব OTP cache এ রাখো — যাতে পাঠানো না হয়
+    logger.info("🔄 Pre-loading OTP cache...")
+    rows = fetch_all_recent_otps()
+    for row in rows:
+        try:
+            dt_str = row.get("dt", "")
+            number = str(row.get("num", "")).strip()
+            message = row.get("message", "")
+            if message and number:
+                cache_key = f"{number}:{dt_str}:{message[:30]}"
+                otp_cache[cache_key] = datetime.now()
+        except:
+            pass
+    logger.info(f"✅ Pre-loaded {len(otp_cache)} OTP cache entries")
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_cmd))
