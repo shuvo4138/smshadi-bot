@@ -280,10 +280,38 @@ def country_keyboard(service: str):
 def admin_keyboard():
     buttons = [
         [InlineKeyboardButton("📊 Stats", callback_data="admin_stats")],
-        [InlineKeyboardButton("📤 Upload Numbers", callback_data="admin_upload")],
+        [InlineKeyboardButton("📤 Upload Numbers", callback_data="admin_upload"),
+         InlineKeyboardButton("🗑 Delete Numbers", callback_data="admin_delete_menu")],
         [InlineKeyboardButton("👥 All Users", callback_data="admin_users")],
         [InlineKeyboardButton("🔄 Re-login Dashboard", callback_data="admin_relogin")],
     ]
+    return InlineKeyboardMarkup(buttons)
+
+def delete_service_keyboard():
+    """Select service to delete numbers from"""
+    buttons = []
+    for s in SERVICES:
+        emoji = SERVICE_EMOJI[s]
+        buttons.append([InlineKeyboardButton(f"{emoji} {s}", callback_data=f"admin_del_service_{s}")])
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_back")])
+    return InlineKeyboardMarkup(buttons)
+
+def delete_country_keyboard(service: str):
+    """Select country to delete numbers from"""
+    countries = list(numbers_pool.get(service, {}).keys())
+    if not countries:
+        return None
+    buttons = []
+    for code in countries:
+        flag = COUNTRY_FLAGS.get(code, "🌍")
+        name = COUNTRY_NAMES.get(code, code)
+        count = len(numbers_pool[service][code])
+        buttons.append([InlineKeyboardButton(
+            f"{flag} {name} ({count} numbers)",
+            callback_data=f"admin_del_country_{service}_{code}"
+        )])
+    buttons.append([InlineKeyboardButton("🗑 Delete ALL Services", callback_data="admin_del_all")])
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data="admin_delete_menu")])
     return InlineKeyboardMarkup(buttons)
 
 # ─── OTP Polling ──────────────────────────────────────────────────
@@ -508,8 +536,108 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Access denied", show_alert=True)
             return
         await query.edit_message_text(
-            "📤 *Upload Numbers*\n\nSend: `/addnumbers <service> <country_code>`\n\nExample:\n`/addnumbers WhatsApp 95`\n\nThen send numbers one per line.",
+            "📤 *Upload Numbers via TXT File*\n\n"
+            "Send a `.txt` file with this format:\n\n"
+            "`service:country_code`\n"
+            "`+959123456789`\n"
+            "`+959987654321`\n\n"
+            "Example file content:\n"
+            "`WhatsApp:95`\n"
+            "`+959111222333`\n"
+            "`+959444555666`\n\n"
+            "Or use command:\n`/addnumbers WhatsApp 95`\nthen paste numbers.",
             parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
+        )
+
+    elif data == "admin_delete_menu":
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        await query.edit_message_text(
+            "🗑 *Delete Numbers*\n\nSelect a service:",
+            parse_mode="Markdown",
+            reply_markup=delete_service_keyboard()
+        )
+
+    elif data.startswith("admin_del_service_"):
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        service = data.replace("admin_del_service_", "")
+        kb = delete_country_keyboard(service)
+        if not kb:
+            await query.answer(f"❌ No numbers in {service}", show_alert=True)
+            return
+        await query.edit_message_text(
+            f"🗑 *Delete from {service}*\n\nSelect country:",
+            parse_mode="Markdown",
+            reply_markup=kb
+        )
+
+    elif data.startswith("admin_del_country_"):
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        parts = data.replace("admin_del_country_", "").split("_", 1)
+        if len(parts) < 2:
+            return
+        service, country = parts[0], parts[1]
+        count = len(numbers_pool.get(service, {}).get(country, []))
+        await query.edit_message_text(
+            f"⚠️ *Confirm Delete*\n\n"
+            f"Service: *{service}*\n"
+            f"Country: `{country}`\n"
+            f"Numbers: `{count}`\n\n"
+            f"Are you sure?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"admin_del_confirm_{service}_{country}")],
+                [InlineKeyboardButton("🔙 Cancel", callback_data=f"admin_del_service_{service}")]
+            ])
+        )
+
+    elif data.startswith("admin_del_confirm_"):
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        parts = data.replace("admin_del_confirm_", "").split("_", 1)
+        if len(parts) < 2:
+            return
+        service, country = parts[0], parts[1]
+        if service in numbers_pool and country in numbers_pool[service]:
+            del numbers_pool[service][country]
+            save_numbers()
+            await query.edit_message_text(
+                f"✅ Deleted all numbers for *{service}* / `{country}`",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
+            )
+        else:
+            await query.edit_message_text("❌ Not found.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]]))
+
+    elif data == "admin_del_all":
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        await query.edit_message_text(
+            "⚠️ *Confirm Delete ALL Numbers*\n\nThis will remove ALL numbers from ALL services!\n\nAre you sure?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Yes, Delete All", callback_data="admin_del_all_confirm")],
+                [InlineKeyboardButton("🔙 Cancel", callback_data="admin_delete_menu")]
+            ])
+        )
+
+    elif data == "admin_del_all_confirm":
+        if user_id != ADMIN_ID:
+            await query.answer("❌ Access denied", show_alert=True)
+            return
+        global numbers_pool
+        numbers_pool = {s: {} for s in SERVICES}
+        save_numbers()
+        await query.edit_message_text(
+            "✅ All numbers deleted.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_back")]])
         )
 
@@ -581,6 +709,81 @@ async def handle_number_upload(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode="Markdown"
     )
 
+async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle .txt file upload from admin to add numbers"""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    doc = update.message.document
+    if not doc or not doc.file_name.endswith(".txt"):
+        return
+    
+    try:
+        file = await context.bot.get_file(doc.file_id)
+        content = bytes()
+        # Download file content
+        import io
+        buf = io.BytesIO()
+        await file.download_to_memory(buf)
+        buf.seek(0)
+        text = buf.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        await update.message.reply_text(f"❌ File read error: {e}")
+        return
+    
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if not lines:
+        await update.message.reply_text("❌ File is empty.")
+        return
+    
+    # Parse header line: service:country_code
+    header = lines[0]
+    if ":" not in header:
+        await update.message.reply_text(
+            "❌ First line must be `service:country_code`\n\nExample: `WhatsApp:95`",
+            parse_mode="Markdown"
+        )
+        return
+    
+    service_raw, country_code = header.split(":", 1)
+    service = service_raw.strip().capitalize()
+    country_code = country_code.strip()
+    
+    if service not in SERVICES:
+        await update.message.reply_text(f"❌ Invalid service: `{service}`\n\nUse: {', '.join(SERVICES)}", parse_mode="Markdown")
+        return
+    
+    number_lines = lines[1:]
+    numbers = [l if l.startswith("+") else f"+{l}" for l in number_lines if re.match(r'^\+?\d{7,15}$', l)]
+    
+    if not numbers:
+        await update.message.reply_text("❌ No valid numbers found in file.")
+        return
+    
+    if country_code not in numbers_pool[service]:
+        numbers_pool[service][country_code] = []
+    
+    added = 0
+    skipped = 0
+    for n in numbers:
+        if n not in numbers_pool[service][country_code]:
+            numbers_pool[service][country_code].append(n)
+            added += 1
+        else:
+            skipped += 1
+    
+    save_numbers()
+    flag = COUNTRY_FLAGS.get(country_code, "🌍")
+    await update.message.reply_text(
+        f"✅ *Upload Complete!*\n\n"
+        f"Service: *{service}* {flag}\n"
+        f"Country: `{country_code}`\n"
+        f"✅ Added: `{added}`\n"
+        f"⏭ Skipped (duplicate): `{skipped}`\n"
+        f"📱 Total now: `{len(numbers_pool[service][country_code])}`",
+        parse_mode="Markdown"
+    )
+
 # ─── Main ─────────────────────────────────────────────────────────
 
 def main():
@@ -593,6 +796,9 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("addnumbers", add_numbers_command))
     app.add_handler(CallbackQueryHandler(button_handler))
+
+    # TXT file upload handler (admin)
+    app.add_handler(MessageHandler(filters.Document.FileExtension("txt"), handle_txt_file))
 
     # Reply keyboard buttons handler (must be before generic text handler)
     app.add_handler(MessageHandler(
