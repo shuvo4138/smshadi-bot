@@ -6,7 +6,7 @@ import os
 import json
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.error import BadRequest
 
@@ -212,6 +212,14 @@ def service_stats():
 
 # ─── Keyboards ───────────────────────────────────────────────────
 
+def get_main_keyboard(user_id):
+    buttons = [
+        [KeyboardButton("📲 Get Number"), KeyboardButton("📋 Active Number")],
+    ]
+    if user_id == ADMIN_ID:
+        buttons.append([KeyboardButton("👑 Admin Panel")])
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
 def service_keyboard():
     buttons = []
     row = []
@@ -245,9 +253,9 @@ def country_keyboard(service: str):
 
 def number_action_keyboard(number: str, service: str, country: str):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 OTP Check", callback_data=f"refresh_{number}"),
-         InlineKeyboardButton("📜 OTP History", callback_data=f"history_{number}")],
-        [InlineKeyboardButton("❌ Number ছাড়ুন", callback_data="release_number")],
+        [InlineKeyboardButton("🔀 Change Number", callback_data=f"country_{service}_{country}"),
+         InlineKeyboardButton("📢 OTP Group", url=OTP_CHANNEL_LINK)],
+        [InlineKeyboardButton("🔙 Main Menu", callback_data="get_number")],
     ])
 
 async def safe_edit(query, text, parse_mode="Markdown", reply_markup=None):
@@ -399,11 +407,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id in banned_users:
         await update.message.reply_text("❌ আপনি ban হয়েছেন।")
         return
+    # পুরনো keyboard সরাও
+    await update.message.reply_text("👋", reply_markup=ReplyKeyboardRemove())
     await update.message.reply_text(
         f"👋 স্বাগতম *{user.first_name}*!\n\n🤖 *SMS Hadi OTP Bot*\n\nService বেছে number নিন এবং OTP receive করুন। 👇",
         parse_mode="Markdown",
         reply_markup=service_keyboard()
     )
+    await update.message.reply_text("Menu:", reply_markup=get_main_keyboard(user.id))
     save_data()
 
 async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -503,7 +514,35 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await start(update, context)
+    if text == "📲 Get Number":
+        await update.message.reply_text("📲 *Service বেছে নিন:*", parse_mode="Markdown", reply_markup=service_keyboard())
+
+    elif text == "📋 Active Number":
+        if user_id in user_numbers:
+            info = user_numbers[user_id]
+            num = info["number"]
+            service = info["service"]
+            country = info["country"]
+            flag = COUNTRY_FLAGS.get(country, "🌍")
+            name = get_country_name(country)
+            emoji = SERVICE_EMOJI.get(service, "")
+            await update.message.reply_text(
+                f"📞 *Your Number is Ready!*\n\nTap to copy: `{num}`\n\n✅ Your number is active!\n❗ Go to our OTP Group to see your incoming SMS.\n\n🔖 {emoji} {service} | {flag} {name}",
+                parse_mode="Markdown",
+                reply_markup=number_action_keyboard(num, service, country)
+            )
+        else:
+            await update.message.reply_text("❌ আপনার কোনো active number নেই।",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📲 Number নিন", callback_data="get_number")]]))
+
+    elif text == "👑 Admin Panel":
+        if user_id != ADMIN_ID:
+            await update.message.reply_text("❌ আপনি admin না!")
+            return
+        await show_admin_panel(update, context)
+
+    else:
+        await start(update, context)
 
 # ─── Button Handler ───────────────────────────────────────────────
 
