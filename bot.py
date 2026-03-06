@@ -22,7 +22,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
 JOIN_CHANNEL = os.getenv("JOIN_CHANNEL", "https://t.me/alwaysrvice24hours").strip()
-DASHBOARD_BASE = os.getenv("DASHBOARD_BASE", "http://185.2.83.39/ints/agent/SMSDashboard").strip()
+DASHBOARD_BASE = "http://185.2.83.39/ints/agent"
+API_URL = f"{DASHBOARD_BASE}/SMSDashboard/res/data_smscdr.php"
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "").strip()
 DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "").strip()
 NUMBERS_FILE = "numbers.json"
@@ -140,9 +141,9 @@ def fetch_otp_for_number(number: str):
     try:
         clean_num = number.lstrip("+").strip()
         resp = requests.get(
-            f"{DASHBOARD_BASE}/res/data_smscdr.php",
+            API_URL,
             params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 50, "fnumber": clean_num},
-            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSCDRReports"},
+            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSDashboard/SMSCDRReports"},
             timeout=15
         )
         if resp.status_code in [302, 401, 403]:
@@ -171,9 +172,9 @@ def fetch_all_recent_otps():
         return []
     try:
         resp = requests.get(
-            f"{DASHBOARD_BASE}/res/data_smscdr.php",
+            API_URL,
             params={"sEcho": 1, "iDisplayStart": 0, "iDisplayLength": 100},
-            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSCDRReports"},
+            headers={"Cookie": f"PHPSESSID={cookie}", "X-Requested-With": "XMLHttpRequest", "Referer": f"{DASHBOARD_BASE}/SMSDashboard/SMSCDRReports"},
             timeout=15
         )
         if resp.status_code in [302, 401, 403]:
@@ -275,6 +276,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("নিচের menu থেকে option বেছে নিন:", reply_markup=get_user_keyboard(user.id))
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
     text = update.message.text
     user_id = update.effective_user.id
 
