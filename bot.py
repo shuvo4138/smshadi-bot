@@ -32,6 +32,10 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 CR_API_URL = "http://147.135.212.197/crapi/had/viewstats"
 CR_API_TOKEN = os.getenv("CR_API_TOKEN", "SVJWSTRSQn6HYmlIa19oRmGQZYNjZWuKXlGHWoZOV3mGbmFVV3B5").strip()
 
+# iVAS Configuration
+IVAS_SMS_URL = "https://www.ivasms.com/portal/live/my_sms"
+IVAS_COOKIES_FILE = os.getenv("IVAS_COOKIES_FILE", "ivas_cookies.json")
+
 otp_cache = {}
 
 # ─── All Countries Data ────────────────────────────────────────────────────
@@ -373,11 +377,66 @@ def fetch_cr_api_otps():
         logger.error(f"CR API Error: {e}")
         return []
 
+# ─── iVAS SMS Fetch ────────────────────────────────────────────────────────
+
+def load_ivas_cookies():
+    try:
+        if not os.path.exists(IVAS_COOKIES_FILE):
+            logger.warning(f"iVAS cookies file not found: {IVAS_COOKIES_FILE}")
+            return None
+        with open(IVAS_COOKIES_FILE, "r") as f:
+            cookies_list = json.load(f)
+        cookies = {}
+        for c in cookies_list:
+            cookies[c["name"]] = c["value"]
+        return cookies
+    except Exception as e:
+        logger.error(f"load_ivas_cookies error: {e}")
+        return None
+
+def fetch_ivas_otps():
+    try:
+        cookies = load_ivas_cookies()
+        if not cookies:
+            return []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": IVAS_SMS_URL,
+        }
+        r = requests.get(IVAS_SMS_URL, cookies=cookies, headers=headers, timeout=15)
+        if r.status_code != 200:
+            logger.warning(f"iVAS fetch status: {r.status_code}")
+            return []
+        if "login" in r.url.lower():
+            logger.warning("iVAS cookie expired! Please update ivas_cookies.json")
+            return []
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.text, "html.parser")
+        results = []
+        rows = soup.select("table tbody tr")
+        for row in rows:
+            cols = row.find_all("td")
+            if len(cols) >= 5:
+                number = cols[0].get_text(strip=True)
+                sid = cols[1].get_text(strip=True)
+                message = cols[4].get_text(strip=True)
+                if number and message:
+                    results.append({
+                        "num": number.lstrip("+"),
+                        "message": message,
+                        "dt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "sid": sid,
+                        "source": "iVAS"
+                    })
+        return results
+    except Exception as e:
+        logger.error(f"fetch_ivas_otps error: {e}")
+        return []
+
 async def poll_otps(context):
     try:
+        # ── CR API OTPs ──
         otps = fetch_cr_api_otps()
-        if not otps:
-            return
         for otp_data in otps:
             try:
                 number = otp_data.get("num", "").strip()
@@ -386,7 +445,7 @@ async def poll_otps(context):
                 otp_code = extract_otp(message)
                 if not number or not otp_code or not dt:
                     continue
-                cache_key = f"{number}:{otp_code}:{dt}"
+                cache_key = f"hadi:{number}:{otp_code}:{dt}"
                 if cache_key in otp_cache:
                     continue
                 otp_cache[cache_key] = True
@@ -411,8 +470,48 @@ async def poll_otps(context):
                     reply_markup=keyboard
                 )
             except Exception as e:
-                logger.error(f"Error processing OTP: {e}")
+                logger.error(f"Error processing CR OTP: {e}")
                 continue
+
+        # ── iVAS OTPs ──
+        ivas_otps = fetch_ivas_otps()
+        for otp_data in ivas_otps:
+            try:
+                number = otp_data.get("num", "").strip()
+                message = otp_data.get("message", "").strip()
+                dt = otp_data.get("dt", "").strip()
+                sid = otp_data.get("sid", "").strip()
+                otp_code = extract_otp(message)
+                if not number or not otp_code:
+                    continue
+                cache_key = f"ivas:{number}:{otp_code}:{sid}"
+                if cache_key in otp_cache:
+                    continue
+                otp_cache[cache_key] = True
+                country = extract_country_code(number)
+                hidden_number = hide_number(number)
+                flag = COUNTRY_FLAGS.get(country, "🌍")
+                msg = (
+                    f"🆕 *NEW OTP - FACEBOOK*\n\n"
+                    f"📱 Number : {flag}`+{hidden_number}`\n"
+                    f"🔐 OTP Code : `{otp_code}`\n"
+                    f"📝 Message : `{message[:100]}`\n"
+                    f"⏰ Time : `{dt}`"
+                )
+                keyboard = InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🤖 Number Bot", url="https://t.me/pc_clonev1_bot"),
+                    InlineKeyboardButton("📢 Our Channel", url=MAIN_CHANNEL_LINK)
+                ]])
+                await context.bot.send_message(
+                    chat_id=OTP_CHANNEL_ID,
+                    text=msg,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Error processing iVAS OTP: {e}")
+                continue
+
     except Exception as e:
         logger.error(f"Poll OTPs Error: {e}")
 
@@ -634,8 +733,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif action == "settings":
             await query.edit_message_text("⚙️ *Settings*\n\nComing soon...")
 
+async def update_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ Admin only!")
+        return
+    context.bot_data["waiting_cookie"] = True
+    await update.message.reply_text(
+        "🍪 *Cookie Update Mode*\n\n"
+        "Cookie Editor থেকে JSON export করে এখানে paste করুন:\n\n"
+        "_(Chrome → iVAS portal → Cookie Editor → Export → Copy)_",
+        parse_mode="Markdown"
+    )
+
+async def handle_cookie_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not context.bot_data.get("waiting_cookie"):
+        return
+    try:
+        text = update.message.text.strip()
+        cookies = json.loads(text)
+        with open(IVAS_COOKIES_FILE, "w") as f:
+            json.dump(cookies, f, indent=2)
+        context.bot_data["waiting_cookie"] = False
+        await update.message.reply_text(
+            f"✅ *Cookie Updated!*\n\n"
+            f"🍪 {len(cookies)} ta cookie save hoyeche.\n"
+            f"✅ iVAS panel er sathe connection restore hoyeche!",
+            parse_mode="Markdown"
+        )
+        logger.info("iVAS cookies updated via Telegram!")
+    except json.JSONDecodeError:
+        await update.message.reply_text(
+            "❌ *Invalid JSON!*\n\nCookie Editor থেকে সঠিকভাবে export করুন।",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
+        return
+    if context.bot_data.get("waiting_cookie"):
+        await handle_cookie_input(update, context)
         return
     if not context.bot_data.get("pending_broadcast"):
         return
@@ -714,6 +856,7 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("updatecookie", update_cookie))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.Document.FileExtension("txt"), handle_txt_file))
     app.add_handler(MessageHandler(
