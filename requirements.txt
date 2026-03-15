@@ -4,3 +4,4 @@ python-dotenv==1.0.0
 selenium
 webdriver-manager
 psycopg2-binary
+beautifulsoup4
