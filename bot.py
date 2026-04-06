@@ -5,11 +5,9 @@ import requests
 import os
 import json
 import asyncio
-import psycopg2
-import psycopg2.extras
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ChatMember
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.error import BadRequest
 
@@ -18,7 +16,7 @@ load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Environment variables
+# ─── Environment Variables ─────────────────────────────────────────────────
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.getenv("ADMIN_ID", "1984916365").strip())
 OTP_CHANNEL_ID = int(os.getenv("OTP_CHANNEL_ID", "-1002625886518").strip())
@@ -26,20 +24,33 @@ OTP_CHANNEL_LINK = os.getenv("OTP_CHANNEL_LINK", "https://t.me/+SWraCXOQrWM4Mzg9
 JOIN_CHANNEL_USERNAME = os.getenv("JOIN_CHANNEL_USERNAME", "alwaysrvice24hours").strip()
 JOIN_CHANNEL_LINK = f"https://t.me/{JOIN_CHANNEL_USERNAME}"
 MAIN_CHANNEL_LINK = "https://t.me/alwaysrvice24hours"
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "-1003671562242").strip())
 
-# CR API Configuration
+# CR API
 CR_API_URL = "http://147.135.212.197/crapi/had/viewstats"
 CR_API_TOKEN = os.getenv("CR_API_TOKEN", "SVJWSTRSQn6HYmlIa19oRmGQZYNjZWuKXlGHWoZOV3mGbmFVV3B5").strip()
 
-# iVAS Configuration
+# iVAS
 IVAS_SMS_URL = "https://www.ivasms.com/portal/live/my_sms"
 IVAS_COOKIES_FILE = os.getenv("IVAS_COOKIES_FILE", "ivas_cookies.json")
 
+# ─── In-Memory Storage ─────────────────────────────────────────────────────
+# { pool_key: message_id }  — Telegram channel এ কোন message এ আছে
+pool_message_ids = {}
+
+# { pool_key: [number1, number2, ...] }  — memory cache
+numbers_pool = {}
+
+# { user_id: { number, pool_key } }
+user_sessions = {}
+
+# { user_id: username }
+users_db = {}
+
+# OTP duplicate check
 otp_cache = {}
 
-# ─── All Countries Data ────────────────────────────────────────────────────
-
+# ─── Country Data ──────────────────────────────────────────────────────────
 COUNTRY_FLAGS = {
     "1": "🇺🇸", "7": "🇷🇺", "20": "🇪🇬", "27": "🇿🇦", "30": "🇬🇷", "31": "🇳🇱",
     "32": "🇧🇪", "33": "🇫🇷", "34": "🇪🇸", "36": "🇭🇺", "39": "🇮🇹", "40": "🇷🇴",
@@ -115,200 +126,171 @@ COUNTRY_NAMES = {
     "998": "Uzbekistan",
 }
 
-# ─── PostgreSQL DB ─────────────────────────────────────────────────────────
+# ─── Telegram Storage Functions ────────────────────────────────────────────
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
-
-def init_db():
+async def tg_save_pool(bot, pool_key, numbers):
+    """Save number list to Telegram storage channel"""
+    global pool_message_ids
+    text = f"POOL:{pool_key}\n" + "\n".join(numbers)
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS numbers_pool (
-                pool_key TEXT NOT NULL,
-                number TEXT NOT NULL,
-                PRIMARY KEY (pool_key, number)
+        if pool_key in pool_message_ids:
+            # Edit existing message
+            await bot.edit_message_text(
+                chat_id=STORAGE_CHANNEL_ID,
+                message_id=pool_message_ids[pool_key],
+                text=text
             )
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id TEXT PRIMARY KEY,
-                username TEXT,
-                joined TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_sessions (
-                user_id TEXT PRIMARY KEY,
-                number TEXT,
-                pool_key TEXT,
-                assigned_time TEXT
-            )
-        """)
-        conn.commit()
-        cur.close()
-        conn.close()
-        logger.info("✅ DB initialized")
+        else:
+            # Send new message
+            msg = await bot.send_message(chat_id=STORAGE_CHANNEL_ID, text=text)
+            pool_message_ids[pool_key] = msg.message_id
     except Exception as e:
-        logger.error(f"DB init error: {e}")
+        logger.error(f"tg_save_pool error [{pool_key}]: {e}")
 
-def db_get_numbers_pool():
+async def tg_load_all_pools(bot):
+    """Bot start এ storage channel থেকে সব pool load করো"""
+    global numbers_pool, pool_message_ids
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT pool_key, number FROM numbers_pool")
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-        pool = {}
-        for pool_key, number in rows:
-            if pool_key not in pool:
-                pool[pool_key] = []
-            pool[pool_key].append(number)
-        return pool
-    except Exception as e:
-        logger.error(f"db_get_numbers_pool error: {e}")
-        return {}
-
-def db_add_numbers(pool_key, numbers):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        added = 0
-        skipped = 0
-        for number in numbers:
+        # Channel এর recent messages scan করো
+        # Bot এর নিজের পাঠানো messages খুঁজতে হবে
+        # আমরা একটি index message রাখব যেখানে সব pool_key → message_id আছে
+        # প্রথমে index message খুঁজি
+        index_msg = await tg_get_index(bot)
+        if not index_msg:
+            logger.info("No pool index found in storage channel. Starting fresh.")
+            return
+        # index parse করো
+        for line in index_msg.split("\n"):
+            if ":" in line:
+                parts = line.split(":", 1)
+                pk = parts[0].strip()
+                mid = parts[1].strip()
+                if pk and mid.isdigit():
+                    pool_message_ids[pk] = int(mid)
+        # প্রতিটি message থেকে numbers load করো
+        for pool_key, msg_id in pool_message_ids.items():
             try:
-                cur.execute(
-                    "INSERT INTO numbers_pool (pool_key, number) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                    (pool_key, number)
+                msg = await bot.forward_message(
+                    chat_id=STORAGE_CHANNEL_ID,
+                    from_chat_id=STORAGE_CHANNEL_ID,
+                    message_id=msg_id
                 )
-                if cur.rowcount > 0:
-                    added += 1
-                else:
-                    skipped += 1
-            except:
-                skipped += 1
-        conn.commit()
-        cur.close()
-        conn.close()
-        return added, skipped
+                # forward করা message delete করো, শুধু content নাও
+                text = msg.text or ""
+                await msg.delete()
+                lines = text.split("\n")
+                nums = [l.strip() for l in lines[1:] if l.strip()]
+                numbers_pool[pool_key] = nums
+                logger.info(f"✅ Loaded pool [{pool_key}]: {len(nums)} numbers")
+            except Exception as e:
+                logger.error(f"Load pool [{pool_key}] error: {e}")
     except Exception as e:
-        logger.error(f"db_add_numbers error: {e}")
-        return 0, 0
+        logger.error(f"tg_load_all_pools error: {e}")
 
-def db_remove_number(pool_key, number):
+async def tg_get_index(bot):
+    """Storage channel থেকে index message content পাও"""
+    global pool_message_ids
+    # Index message ID টা আমরা একটা fixed কিছুতে রাখব না
+    # বরং channel এ "INDEX" দিয়ে শুরু হওয়া message খুঁজব
+    # সহজ approach: bot data তে রাখা (restart এ হারিয়ে যাবে)
+    # তাই আমরা channel এ একটা pinned message রাখব
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM numbers_pool WHERE pool_key=%s AND number=%s", (pool_key, number))
-        conn.commit()
-        cur.close()
-        conn.close()
+        chat = await bot.get_chat(STORAGE_CHANNEL_ID)
+        if chat.pinned_message and chat.pinned_message.text and chat.pinned_message.text.startswith("INDEX\n"):
+            return chat.pinned_message.text[6:]  # "INDEX\n" সরিয়ে বাকিটা
     except Exception as e:
-        logger.error(f"db_remove_number error: {e}")
+        logger.error(f"tg_get_index error: {e}")
+    return None
 
-def db_count_numbers(pool_key):
+async def tg_save_index(bot):
+    """pool_message_ids কে storage channel এ pinned message হিসেবে save করো"""
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM numbers_pool WHERE pool_key=%s", (pool_key,))
-        count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        return count
-    except:
-        return 0
-
-def db_add_user(user_id, username):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO users (user_id, username, joined) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (str(user_id), username, datetime.now().isoformat())
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
+        lines = [f"{pk}:{mid}" for pk, mid in pool_message_ids.items()]
+        text = "INDEX\n" + "\n".join(lines)
+        chat = await bot.get_chat(STORAGE_CHANNEL_ID)
+        if chat.pinned_message and chat.pinned_message.text and chat.pinned_message.text.startswith("INDEX"):
+            await bot.edit_message_text(
+                chat_id=STORAGE_CHANNEL_ID,
+                message_id=chat.pinned_message.message_id,
+                text=text
+            )
+        else:
+            msg = await bot.send_message(chat_id=STORAGE_CHANNEL_ID, text=text)
+            await bot.pin_chat_message(chat_id=STORAGE_CHANNEL_ID, message_id=msg.message_id)
     except Exception as e:
-        logger.error(f"db_add_user error: {e}")
+        logger.error(f"tg_save_index error: {e}")
 
-def db_get_all_users():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users")
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-        return [r[0] for r in rows]
-    except:
-        return []
+# ─── Pool Helper Functions ─────────────────────────────────────────────────
 
-def db_get_user_count():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM users")
-        count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        return count
-    except:
-        return 0
+def get_numbers_pool():
+    return numbers_pool
 
-def db_set_session(user_id, number, pool_key):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO user_sessions (user_id, number, pool_key, assigned_time)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_id) DO UPDATE
-            SET number=EXCLUDED.number, pool_key=EXCLUDED.pool_key, assigned_time=EXCLUDED.assigned_time
-        """, (str(user_id), number, pool_key, datetime.now().isoformat()))
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        logger.error(f"db_set_session error: {e}")
+def get_pool_numbers(pool_key):
+    return numbers_pool.get(pool_key, [])
 
-def db_get_session(user_id):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT number, pool_key FROM user_sessions WHERE user_id=%s", (str(user_id),))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        if row:
-            return {"number": row[0], "pool_key": row[1]}
-        return None
-    except:
-        return None
+async def add_numbers_to_pool(bot, pool_key, new_numbers):
+    existing = set(numbers_pool.get(pool_key, []))
+    added = 0
+    skipped = 0
+    for n in new_numbers:
+        if n not in existing:
+            existing.add(n)
+            added += 1
+        else:
+            skipped += 1
+    numbers_pool[pool_key] = list(existing)
+    await tg_save_pool(bot, pool_key, numbers_pool[pool_key])
+    await tg_save_index(bot)
+    return added, skipped
 
-def db_get_active_sessions_count():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM user_sessions")
-        count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        return count
-    except:
-        return 0
+async def remove_number_from_pool(bot, pool_key, number):
+    nums = numbers_pool.get(pool_key, [])
+    if number in nums:
+        nums.remove(number)
+        numbers_pool[pool_key] = nums
+        await tg_save_pool(bot, pool_key, nums)
+
+def count_numbers(pool_key):
+    return len(numbers_pool.get(pool_key, []))
+
+# ─── User/Session Functions (In-Memory) ───────────────────────────────────
+
+def add_user(user_id, username):
+    uid = str(user_id)
+    if uid not in users_db:
+        users_db[uid] = username or str(user_id)
+        return True  # new user
+    return False  # existing
+
+def is_new_user(user_id):
+    return str(user_id) not in users_db
+
+def get_all_users():
+    return list(users_db.keys())
+
+def get_user_count():
+    return len(users_db)
+
+def set_session(user_id, number, pool_key):
+    user_sessions[str(user_id)] = {
+        "number": number,
+        "pool_key": pool_key,
+        "assigned_time": datetime.now().isoformat()
+    }
+
+def get_session(user_id):
+    return user_sessions.get(str(user_id))
+
+def get_active_sessions_count():
+    return len(user_sessions)
 
 # ─── Helper Functions ──────────────────────────────────────────────────────
 
 def parse_pool_key(pool_key):
     parts = pool_key.split("_")
     code = parts[0]
-    if len(parts) >= 2:
-        slot = parts[1].upper()
-        return code, slot
-    return code, ""
+    slot = parts[1].upper() if len(parts) >= 2 else ""
+    return code, slot
 
 def get_button_label(pool_key):
     code, slot = parse_pool_key(pool_key)
@@ -358,9 +340,8 @@ def fetch_cr_api_otps():
         data = response.json()
         if data.get("status") != "success":
             return []
-        rows = data.get("data", [])
         result = []
-        for row in rows:
+        for row in data.get("data", []):
             try:
                 otp_dict = {
                     "dt": str(row.get("dt", "")).strip(),
@@ -377,19 +358,15 @@ def fetch_cr_api_otps():
         logger.error(f"CR API Error: {e}")
         return []
 
-# ─── iVAS SMS Fetch ────────────────────────────────────────────────────────
+# ─── iVAS SMS ─────────────────────────────────────────────────────────────
 
 def load_ivas_cookies():
     try:
         if not os.path.exists(IVAS_COOKIES_FILE):
-            logger.warning(f"iVAS cookies file not found: {IVAS_COOKIES_FILE}")
             return None
         with open(IVAS_COOKIES_FILE, "r") as f:
             cookies_list = json.load(f)
-        cookies = {}
-        for c in cookies_list:
-            cookies[c["name"]] = c["value"]
-        return cookies
+        return {c["name"]: c["value"] for c in cookies_list}
     except Exception as e:
         logger.error(f"load_ivas_cookies error: {e}")
         return None
@@ -405,16 +382,14 @@ def fetch_ivas_otps():
         }
         r = requests.get(IVAS_SMS_URL, cookies=cookies, headers=headers, timeout=15)
         if r.status_code != 200:
-            logger.warning(f"iVAS fetch status: {r.status_code}")
             return []
         if "login" in r.url.lower():
-            logger.warning("iVAS cookie expired! Please update ivas_cookies.json")
+            logger.warning("iVAS cookie expired!")
             return []
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(r.text, "html.parser")
         results = []
-        rows = soup.select("table tbody tr")
-        for row in rows:
+        for row in soup.select("table tbody tr"):
             cols = row.find_all("td")
             if len(cols) >= 5:
                 number = cols[0].get_text(strip=True)
@@ -433,11 +408,17 @@ def fetch_ivas_otps():
         logger.error(f"fetch_ivas_otps error: {e}")
         return []
 
+# ─── OTP Polling ───────────────────────────────────────────────────────────
+
 async def poll_otps(context):
     try:
-        # ── CR API OTPs ──
-        otps = fetch_cr_api_otps()
-        for otp_data in otps:
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🤖 Number Bot", url="https://t.me/pc_clonev1_bot"),
+            InlineKeyboardButton("📢 Our Channel", url=MAIN_CHANNEL_LINK)
+        ]])
+
+        # CR API
+        for otp_data in fetch_cr_api_otps():
             try:
                 number = otp_data.get("num", "").strip()
                 message = otp_data.get("message", "").strip()
@@ -450,32 +431,23 @@ async def poll_otps(context):
                     continue
                 otp_cache[cache_key] = True
                 country = extract_country_code(number)
-                hidden_number = hide_number(number)
                 flag = COUNTRY_FLAGS.get(country, "🌍")
                 msg = (
                     f"🆕 *NEW OTP - FACEBOOK*\n\n"
-                    f"📱 Number : {flag}`+{hidden_number}`\n"
+                    f"📱 Number : {flag}`+{hide_number(number)}`\n"
                     f"🔐 OTP Code : `{otp_code}`\n"
                     f"📝 Message : `{message[:100]}`\n"
                     f"⏰ Time : `{dt}`"
                 )
-                keyboard = InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🤖 Number Bot", url="https://t.me/pc_clonev1_bot"),
-                    InlineKeyboardButton("📢 Our Channel", url=MAIN_CHANNEL_LINK)
-                ]])
                 await context.bot.send_message(
-                    chat_id=OTP_CHANNEL_ID,
-                    text=msg,
-                    parse_mode="Markdown",
-                    reply_markup=keyboard
+                    chat_id=OTP_CHANNEL_ID, text=msg,
+                    parse_mode="Markdown", reply_markup=keyboard
                 )
             except Exception as e:
-                logger.error(f"Error processing CR OTP: {e}")
-                continue
+                logger.error(f"CR OTP error: {e}")
 
-        # ── iVAS OTPs ──
-        ivas_otps = fetch_ivas_otps()
-        for otp_data in ivas_otps:
+        # iVAS
+        for otp_data in fetch_ivas_otps():
             try:
                 number = otp_data.get("num", "").strip()
                 message = otp_data.get("message", "").strip()
@@ -489,28 +461,20 @@ async def poll_otps(context):
                     continue
                 otp_cache[cache_key] = True
                 country = extract_country_code(number)
-                hidden_number = hide_number(number)
                 flag = COUNTRY_FLAGS.get(country, "🌍")
                 msg = (
                     f"🆕 *NEW OTP - FACEBOOK*\n\n"
-                    f"📱 Number : {flag}`+{hidden_number}`\n"
+                    f"📱 Number : {flag}`+{hide_number(number)}`\n"
                     f"🔐 OTP Code : `{otp_code}`\n"
                     f"📝 Message : `{message[:100]}`\n"
                     f"⏰ Time : `{dt}`"
                 )
-                keyboard = InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🤖 Number Bot", url="https://t.me/pc_clonev1_bot"),
-                    InlineKeyboardButton("📢 Our Channel", url=MAIN_CHANNEL_LINK)
-                ]])
                 await context.bot.send_message(
-                    chat_id=OTP_CHANNEL_ID,
-                    text=msg,
-                    parse_mode="Markdown",
-                    reply_markup=keyboard
+                    chat_id=OTP_CHANNEL_ID, text=msg,
+                    parse_mode="Markdown", reply_markup=keyboard
                 )
             except Exception as e:
-                logger.error(f"Error processing iVAS OTP: {e}")
-                continue
+                logger.error(f"iVAS OTP error: {e}")
 
     except Exception as e:
         logger.error(f"Poll OTPs Error: {e}")
@@ -519,20 +483,15 @@ async def poll_otps(context):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    
-    # Check if new or returning user
-    existing_users = db_get_all_users()
-    is_new = str(user.id) not in existing_users
-    
-    db_add_user(user.id, user.username or user.first_name)
-    
+    is_new = is_new_user(user.id)
+    add_user(user.id, user.username or user.first_name)
+
     buttons = [[KeyboardButton("📲 Get Number"), KeyboardButton("📋 Active Numbers")]]
     if user.id == ADMIN_ID:
         buttons.append([KeyboardButton("👑 Admin Panel")])
     keyboard = ReplyKeyboardMarkup(buttons, resize_keyboard=True, one_time_keyboard=False)
-    
+
     if is_new:
-        # New user - slow animated welcome
         loading_msg = await update.message.reply_text("⏳")
         await asyncio.sleep(0.8)
         await loading_msg.edit_text("🔄 Initializing...")
@@ -540,27 +499,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await loading_msg.edit_text("✅ Account Created!")
         await asyncio.sleep(0.6)
         await loading_msg.delete()
-        
         await update.message.reply_text(
             f"🎉 *Welcome to NUMBER PANEL NGN!*\n\n"
             f"👋 হ্যালো {user.first_name}! তুমি নতুন member!\n\n"
             f"📲 Get Number — Facebook number নাও\n"
             f"📋 Active Numbers — তোমার active number দেখো\n\n"
             f"🚀 শুরু করো!",
-            parse_mode="Markdown",
-            reply_markup=keyboard
+            parse_mode="Markdown", reply_markup=keyboard
         )
     else:
-        # Returning user
         loading_msg = await update.message.reply_text("🔄 Loading...")
         await asyncio.sleep(0.7)
         await loading_msg.delete()
-        
         await update.message.reply_text(
             f"👋 *Welcome Back, {user.first_name}!*\n\n"
             f"🤖 NUMBER PANEL NGN — Ready!",
-            parse_mode="Markdown",
-            reply_markup=keyboard
+            parse_mode="Markdown", reply_markup=keyboard
         )
 
 async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -568,29 +522,25 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
     user_id = update.effective_user.id
 
     if text == "📲 Get Number":
-        pool = db_get_numbers_pool()
+        pool = get_numbers_pool()
         if not pool:
             await update.message.reply_text("❌ No numbers available yet!")
             return
-        buttons = []
-        for pool_key in sorted(pool.keys()):
-            label = get_button_label(pool_key)
-            buttons.append(InlineKeyboardButton(label, callback_data=f"getcountry:{pool_key}"))
+        buttons = [
+            InlineKeyboardButton(get_button_label(pk), callback_data=f"getcountry:{pk}")
+            for pk in sorted(pool.keys())
+        ]
         keyboard = InlineKeyboardMarkup([[btn] for btn in buttons])
         await update.message.reply_text(
             "🌍 *Select Country for Facebook:*",
-            parse_mode="Markdown",
-            reply_markup=keyboard
+            parse_mode="Markdown", reply_markup=keyboard
         )
 
     elif text == "📋 Active Numbers":
-        session = db_get_session(user_id)
+        session = get_session(user_id)
         msg = "📱 *Your Active Numbers:*\n\n"
         if session:
-            number = session.get("number", "")
-            pool_key = session.get("pool_key", "")
-            label = get_button_label(pool_key)
-            msg += f"📘 {label}\n📱 `{number}`"
+            msg += f"📘 {get_button_label(session['pool_key'])}\n📱 `{session['number']}`"
         else:
             msg += "❌ No active numbers"
         await update.message.reply_text(msg, parse_mode="Markdown")
@@ -611,18 +561,18 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    await query.answer()
     data = query.data
     user_id = update.effective_user.id
 
     if data.startswith("getcountry:"):
         pool_key = data.split(":", 1)[1]
-        pool = db_get_numbers_pool()
-        numbers = pool.get(pool_key, [])
+        numbers = get_pool_numbers(pool_key)
         if not numbers:
-            await query.answer("❌ No numbers available")
+            await query.answer("❌ No numbers available", show_alert=True)
             return
         number = random.choice(numbers)
-        db_set_session(user_id, number, pool_key)
+        set_session(user_id, number, pool_key)
         label = get_button_label(pool_key)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Change Number", callback_data=f"change:{pool_key}")],
@@ -635,28 +585,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📱 Number: `{number}`\n\n"
             f"⏰ Valid for 10 minutes\n"
             f"⏳ Waiting for SMS...",
-            parse_mode="Markdown",
-            reply_markup=keyboard
+            parse_mode="Markdown", reply_markup=keyboard
         )
 
     elif data.startswith("change:"):
         pool_key = data.split(":", 1)[1]
-        pool = db_get_numbers_pool()
-        numbers = pool.get(pool_key, [])
-        if not numbers:
-            await query.answer("❌ No numbers available")
-            return
-        # Remove old number
-        session = db_get_session(user_id)
+        session = get_session(user_id)
         if session and session.get("number"):
-            db_remove_number(pool_key, session["number"])
-            pool = db_get_numbers_pool()
-            numbers = pool.get(pool_key, [])
-            if not numbers:
-                await query.answer("❌ No more numbers available")
-                return
+            await remove_number_from_pool(context.bot, pool_key, session["number"])
+        numbers = get_pool_numbers(pool_key)
+        if not numbers:
+            await query.answer("❌ No more numbers available", show_alert=True)
+            return
         number = random.choice(numbers)
-        db_set_session(user_id, number, pool_key)
+        set_session(user_id, number, pool_key)
         label = get_button_label(pool_key)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Change Number", callback_data=f"change:{pool_key}")],
@@ -669,43 +611,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📱 New Number: `{number}`\n\n"
             f"⏰ Valid for 10 minutes\n"
             f"⏳ Waiting for SMS...",
-            parse_mode="Markdown",
-            reply_markup=keyboard
+            parse_mode="Markdown", reply_markup=keyboard
         )
 
     elif data == "changecountry":
-        pool = db_get_numbers_pool()
+        pool = get_numbers_pool()
         if not pool:
-            await query.answer("❌ No countries available")
+            await query.answer("❌ No countries available", show_alert=True)
             return
-        buttons = []
-        for pool_key in sorted(pool.keys()):
-            label = get_button_label(pool_key)
-            buttons.append(InlineKeyboardButton(label, callback_data=f"getcountry:{pool_key}"))
+        buttons = [
+            InlineKeyboardButton(get_button_label(pk), callback_data=f"getcountry:{pk}")
+            for pk in sorted(pool.keys())
+        ]
         keyboard = InlineKeyboardMarkup([[btn] for btn in buttons])
         await query.edit_message_text(
             "🌍 *Select Country for Facebook:*",
-            parse_mode="Markdown",
-            reply_markup=keyboard
+            parse_mode="Markdown", reply_markup=keyboard
         )
 
     elif data.startswith("admin_"):
         if user_id != ADMIN_ID:
-            await query.answer("❌ Admin only!")
+            await query.answer("❌ Admin only!", show_alert=True)
             return
-        action = data.split("_")[1]
+        action = data.split("_", 1)[1]
 
         if action == "stats":
-            pool = db_get_numbers_pool()
+            pool = get_numbers_pool()
             total_numbers = sum(len(v) for v in pool.values())
-            total_users = db_get_user_count()
-            active_sessions = db_get_active_sessions_count()
             await query.edit_message_text(
                 f"📊 *Statistics*\n\n"
-                f"👥 Total Users: `{total_users}`\n"
+                f"👥 Total Users: `{get_user_count()}`\n"
                 f"📱 Total Numbers: `{total_numbers}`\n"
                 f"🌍 Pools: `{len(pool)}`\n"
-                f"📡 Active Sessions: `{active_sessions}`",
+                f"📡 Active Sessions: `{get_active_sessions_count()}`",
                 parse_mode="Markdown"
             )
 
@@ -713,7 +651,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "📝 *Send numbers.txt file*\n\n"
                 "📌 Format: `91.txt` or `91_s2.txt`\n"
-                "📌 Content: One number per line"
+                "📌 Content: One number per line",
+                parse_mode="Markdown"
             )
 
         elif action == "broadcast":
@@ -721,21 +660,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "📢 *Broadcast*\n\n"
                 "এখন যে message পাঠাবে সেটা সব user কে send হবে।\n"
-                "পাঠাও:"
+                "পাঠাও:",
+                parse_mode="Markdown"
             )
 
         elif action == "analytics":
-            await query.edit_message_text("📈 *Analytics*\n\nComing soon...")
+            await query.edit_message_text("📈 *Analytics*\n\nComing soon...", parse_mode="Markdown")
 
         elif action == "delete":
-            await query.edit_message_text("🗑️ *Delete Numbers*\n\nComing soon...")
+            await query.edit_message_text("🗑️ *Delete Numbers*\n\nComing soon...", parse_mode="Markdown")
 
         elif action == "settings":
-            await query.edit_message_text("⚙️ *Settings*\n\nComing soon...")
+            await query.edit_message_text("⚙️ *Settings*\n\nComing soon...", parse_mode="Markdown")
 
 async def update_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Admin only!")
         return
     context.bot_data["waiting_cookie"] = True
@@ -747,13 +686,8 @@ async def update_cookie(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_cookie_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if not context.bot_data.get("waiting_cookie"):
-        return
     try:
-        text = update.message.text.strip()
-        cookies = json.loads(text)
+        cookies = json.loads(update.message.text.strip())
         with open(IVAS_COOKIES_FILE, "w") as f:
             json.dump(cookies, f, indent=2)
         context.bot_data["waiting_cookie"] = False
@@ -772,7 +706,6 @@ async def handle_cookie_input(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
-
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -783,7 +716,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     context.bot_data["pending_broadcast"] = False
     broadcast_text = update.message.text
-    user_ids = db_get_all_users()
+    user_ids = get_all_users()
     success = 0
     failed = 0
     await update.message.reply_text(f"📢 Broadcasting to {len(user_ids)} users...")
@@ -815,30 +748,30 @@ async def handle_txt_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     pool_key = country_match.group(1).lower()
-    numbers = []
-    for line in text.split('\n'):
-        number = line.strip().lstrip('+')
-        if number and len(number) >= 7:
-            numbers.append(number)
-    added, skipped = db_add_numbers(pool_key, numbers)
-    total = db_count_numbers(pool_key)
-    label = get_button_label(pool_key)
+    new_numbers = [
+        line.strip().lstrip('+')
+        for line in text.split('\n')
+        if line.strip() and len(line.strip()) >= 7
+    ]
+    added, skipped = await add_numbers_to_pool(context.bot, pool_key, new_numbers)
     await update.message.reply_text(
         f"✅ *Upload Complete!*\n\n"
-        f"🌍 Pool: *{label}*\n"
+        f"🌍 Pool: *{get_button_label(pool_key)}*\n"
         f"✅ Added: `{added}` numbers\n"
         f"⏭ Skipped: `{skipped}`\n"
-        f"📱 Total: `{total}`",
+        f"📱 Total: `{count_numbers(pool_key)}`",
         parse_mode="Markdown"
     )
 
 # ─── Main ──────────────────────────────────────────────────────────────────
 
-def main():
-    logger.info("🚀 Starting NUMBER PANEL NGN Bot...")
-    init_db()
+async def post_init(app):
+    """Bot start হওয়ার পর Telegram storage থেকে data load করো"""
+    logger.info("📦 Loading pools from Telegram storage...")
+    await tg_load_all_pools(app.bot)
+    logger.info(f"✅ Loaded {len(numbers_pool)} pools, {sum(len(v) for v in numbers_pool.values())} total numbers")
 
-    global otp_cache
+    # OTP preload
     otps = fetch_cr_api_otps()
     for otp_data in otps:
         try:
@@ -850,11 +783,18 @@ def main():
                 otp_cache[f"{number}:{otp_code}:{dt}"] = True
         except:
             pass
-
     logger.info(f"✅ Preloaded {len(otp_cache)} OTPs")
-    logger.info("✅ Bot Ready!")
 
-    app = Application.builder().token(BOT_TOKEN).build()
+def main():
+    logger.info("🚀 Starting NUMBER PANEL NGN Bot...")
+
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("updatecookie", update_cookie))
     app.add_handler(CallbackQueryHandler(button_handler))
@@ -868,6 +808,7 @@ def main():
         handle_broadcast
     ))
     app.job_queue.run_repeating(poll_otps, interval=5, first=2)
+
     logger.info("✅ NUMBER PANEL NGN running!")
     app.run_polling(drop_pending_updates=True)
 
