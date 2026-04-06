@@ -31,12 +31,12 @@ CR_API_URL = "http://147.135.212.197/crapi/had/viewstats"
 CR_API_TOKEN = os.getenv("CR_API_TOKEN", "SVJWSTRSQn6HYmlIa19oRmGQZYNjZWuKXlGHWoZOV3mGbmFVV3B5").strip()
 
 # ─── In-Memory Storage ─────────────────────────────────────────────────────
-numbers_pool = {}       # { pool_key: [number1, number2, ...] }
-user_sessions = {}      # { user_id: { number, pool_key } }
-users_db = {}           # { user_id: username }
-otp_cache = {}          # duplicate check
+numbers_pool = {}
+user_sessions = {}
+users_db = {}
+otp_cache = {}
 
-STORAGE_MSG_IDS = {}    # { "numbers_msg_id": int, "users_msg_id": int }
+STORAGE_MSG_IDS = {}
 
 # ─── Country Data ──────────────────────────────────────────────────────────
 COUNTRY_FLAGS = {
@@ -114,33 +114,25 @@ COUNTRY_NAMES = {
     "998": "Uzbekistan",
 }
 
-# ─── Markdown Escape Helpers ───────────────────────────────────────────────
-# FIX: দুটো আলাদা function ছিল (escape_markdown + escape_mdv2) — একটাই রাখলাম
+# ─── Markdown Escape ───────────────────────────────────────────────────────
 
 def escape_mdv2(text):
-    """MarkdownV2 special characters escape করো"""
     escape_chars = r'\_*[]()~`>#+-=|{}.!'
     return re.sub(r'([%s])' % re.escape(escape_chars), r'\\\1', str(text))
 
-# Backward compat alias
 escape_markdown = escape_mdv2
 
 # ─── Telegram Storage ──────────────────────────────────────────────────────
 
 async def _save_numbers(bot):
-    """numbers_pool কে storage channel এ save করো"""
     global STORAGE_MSG_IDS
     try:
         text = "NUMBERS_POOL_V2\n" + json.dumps(numbers_pool, ensure_ascii=False)
         mid = STORAGE_MSG_IDS.get("numbers_msg_id")
         if mid:
             try:
-                await bot.edit_message_text(
-                    chat_id=STORAGE_CHANNEL_ID,
-                    message_id=mid,
-                    text=text[:4096]
-                )
-                await _save_index(bot)  # index always sync after save
+                await bot.edit_message_text(chat_id=STORAGE_CHANNEL_ID, message_id=mid, text=text[:4096])
+                await _save_index(bot)
                 return
             except Exception:
                 pass
@@ -151,18 +143,13 @@ async def _save_numbers(bot):
         logger.error(f"_save_numbers error: {e}")
 
 async def _save_users(bot):
-    """users_db কে storage channel এ save করো"""
     global STORAGE_MSG_IDS
     try:
         text = "USERS_DB_V2\n" + json.dumps(users_db, ensure_ascii=False)
         mid = STORAGE_MSG_IDS.get("users_msg_id")
         if mid:
             try:
-                await bot.edit_message_text(
-                    chat_id=STORAGE_CHANNEL_ID,
-                    message_id=mid,
-                    text=text[:4096]
-                )
+                await bot.edit_message_text(chat_id=STORAGE_CHANNEL_ID, message_id=mid, text=text[:4096])
                 await _save_index(bot)
                 return
             except Exception:
@@ -174,88 +161,54 @@ async def _save_users(bot):
         logger.error(f"_save_users error: {e}")
 
 async def _save_index(bot):
-    """STORAGE_MSG_IDS কে pinned message হিসেবে save করো।"""
     try:
         text = "BOT_INDEX_V2\n" + json.dumps(STORAGE_MSG_IDS, ensure_ascii=False)
         chat = await bot.get_chat(STORAGE_CHANNEL_ID)
         pinned = chat.pinned_message
         if pinned and pinned.text and pinned.text.startswith("BOT_INDEX_V2"):
-            await bot.edit_message_text(
-                chat_id=STORAGE_CHANNEL_ID,
-                message_id=pinned.message_id,
-                text=text
-            )
+            await bot.edit_message_text(chat_id=STORAGE_CHANNEL_ID, message_id=pinned.message_id, text=text)
         else:
             msg = await bot.send_message(chat_id=STORAGE_CHANNEL_ID, text=text)
-            await bot.pin_chat_message(
-                chat_id=STORAGE_CHANNEL_ID,
-                message_id=msg.message_id,
-                disable_notification=True
-            )
+            await bot.pin_chat_message(chat_id=STORAGE_CHANNEL_ID, message_id=msg.message_id, disable_notification=True)
     except Exception as e:
         logger.error(f"_save_index error: {e}")
 
 async def tg_load_all(bot):
-    """
-    Bot start এ pinned message থেকে index load করো,
-    তারপর numbers + users load করো।
-
-    FIX: আগে copy_message + forward_message দুটোই করা হচ্ছিল।
-    copy_message এর return value থেকে text পাওয়া যায় না।
-    এখন শুধু forward_message ব্যবহার করা হচ্ছে।
-    """
     global numbers_pool, users_db, STORAGE_MSG_IDS
     try:
         chat = await bot.get_chat(STORAGE_CHANNEL_ID)
         pinned = chat.pinned_message
-
         if not pinned or not pinned.text or not pinned.text.startswith("BOT_INDEX_V2"):
             logger.warning("⚠️ No BOT_INDEX_V2 pinned message found. Fresh start.")
             return
-
         index_json = pinned.text[len("BOT_INDEX_V2\n"):]
         STORAGE_MSG_IDS = json.loads(index_json)
         logger.info(f"✅ Index loaded: {STORAGE_MSG_IDS}")
 
-        # Numbers load করো
         numbers_mid = STORAGE_MSG_IDS.get("numbers_msg_id")
         if numbers_mid:
             try:
-                # FIX: শুধু forward_message — copy_message unnecessary ছিল
-                fwd = await bot.forward_message(
-                    chat_id=STORAGE_CHANNEL_ID,
-                    from_chat_id=STORAGE_CHANNEL_ID,
-                    message_id=numbers_mid
-                )
+                fwd = await bot.forward_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=STORAGE_CHANNEL_ID, message_id=numbers_mid)
                 text = fwd.text or ""
                 await fwd.delete()
-
                 if text.startswith("NUMBERS_POOL_V2\n"):
-                    pool_json = text[len("NUMBERS_POOL_V2\n"):]
-                    numbers_pool = json.loads(pool_json)
+                    numbers_pool = json.loads(text[len("NUMBERS_POOL_V2\n"):])
                     total = sum(len(v) for v in numbers_pool.values())
                     logger.info(f"✅ Numbers loaded: {len(numbers_pool)} pools, {total} numbers")
             except Exception as e:
                 logger.error(f"Numbers load error: {e}")
 
-        # Users load করো
         users_mid = STORAGE_MSG_IDS.get("users_msg_id")
         if users_mid:
             try:
-                fwd = await bot.forward_message(
-                    chat_id=STORAGE_CHANNEL_ID,
-                    from_chat_id=STORAGE_CHANNEL_ID,
-                    message_id=users_mid
-                )
+                fwd = await bot.forward_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=STORAGE_CHANNEL_ID, message_id=users_mid)
                 text = fwd.text or ""
                 await fwd.delete()
                 if text.startswith("USERS_DB_V2\n"):
-                    users_json = text[len("USERS_DB_V2\n"):]
-                    users_db = json.loads(users_json)
+                    users_db = json.loads(text[len("USERS_DB_V2\n"):])
                     logger.info(f"✅ Users loaded: {len(users_db)} users")
             except Exception as e:
                 logger.error(f"Users load error: {e}")
-
     except Exception as e:
         logger.error(f"tg_load_all error: {e}")
 
@@ -278,7 +231,6 @@ async def add_numbers_to_pool(bot, pool_key, new_numbers):
         else:
             skipped += 1
     numbers_pool[pool_key] = list(existing)
-    # FIX: _save_numbers এর ভেতরেই _save_index call হয়, তাই এখানে আলাদা call দরকার নেই
     await _save_numbers(bot)
     return added, skipped
 
@@ -347,7 +299,6 @@ def get_button_label(pool_key):
     return f"{flag} {name} Facebook"
 
 def get_short_label(pool_key):
-    """Inbox notification এর জন্য short label যেমন: 🇬🇭 Ghana Facebook (S-1)"""
     code, slot = parse_pool_key(pool_key)
     flag = COUNTRY_FLAGS.get(code, "🌍")
     name = COUNTRY_NAMES.get(code, "Unknown")
@@ -380,6 +331,14 @@ def hide_number(number):
     if len(number) <= 5:
         return number
     return number[:-5] + "★★" + number[-3:]
+
+# ─── SMS Cache Key Helper ──────────────────────────────────────────────────
+# FIX: cache_key এ colon (:) থাকে যা callback_data এ সমস্যা করে।
+# তাই আলাদা sms_id (index based) ব্যবহার করা হচ্ছে।
+
+def get_sms_id(cache_key: str) -> str:
+    """cache_key থেকে safe sms_id বানাও (colon replace করো)"""
+    return cache_key.replace(":", "_").replace(" ", "_")
 
 # ─── CR API ────────────────────────────────────────────────────────────────
 
@@ -440,12 +399,15 @@ async def poll_otps(context):
                 flag = COUNTRY_FLAGS.get(country, "🌍")
                 hidden = hide_number(number)
 
+                # ── FIX 1: message সবসময় quote হিসেবে আসবে ──
+                # আগে message escape করার পর quote হারিয়ে যেত।
+                # এখন plain text fallback এ সবসময় message দেখাবে।
+
                 safe_message = escape_mdv2(message)
                 safe_otp = escape_mdv2(otp_code)
                 safe_hidden = escape_mdv2(f"+{hidden}")
                 safe_dt = escape_mdv2(dt)
 
-                # ── Channel message ──
                 channel_msg = (
                     f"🆕 *NEW OTP — FACEBOOK*\n\n"
                     f"📱 Number : {flag} `{safe_hidden}`\n"
@@ -461,7 +423,8 @@ async def poll_otps(context):
                         reply_markup=channel_keyboard
                     )
                 except Exception as e:
-                    logger.warning(f"Channel send MarkdownV2 failed, falling back to plain: {e}")
+                    logger.warning(f"Channel MarkdownV2 failed, plain fallback: {e}")
+                    # FIX 1: plain fallback এও message quote দেখাচ্ছে
                     plain_msg = (
                         f"🆕 NEW OTP — FACEBOOK\n\n"
                         f"📱 Number : {flag} +{hidden}\n"
@@ -478,15 +441,22 @@ async def poll_otps(context):
                 # ── Inbox notification ──
                 matched_users = find_users_by_number(number)
                 if matched_users:
+                    # FIX 2 & 3: sms_id safe key ব্যবহার করছি callback_data তে
+                    sms_id = get_sms_id(cache_key)
+
+                    # sms_cache এ store করো
+                    if "sms_cache" not in context.bot_data:
+                        context.bot_data["sms_cache"] = {}
+                    context.bot_data["sms_cache"][sms_id] = message
+
+                    # FIX 3: OTP copy button এ otp_code directly দিচ্ছি
                     inbox_keyboard = InlineKeyboardMarkup([
                         [
-                            InlineKeyboardButton("📋 Full SMS", callback_data=f"copysms:{cache_key}"),
-                            InlineKeyboardButton(f"📋 {otp_code}", callback_data=f"copyotp:{otp_code}"),
+                            InlineKeyboardButton("📋 Full SMS", callback_data=f"copysms:{sms_id}"),
+                            InlineKeyboardButton(f"🔐 {otp_code}", callback_data=f"copyotp:{otp_code}"),
                         ]
                     ])
 
-                    # FIX: get_inbox_label এখন session এর pool_key ব্যবহার করে,
-                    # hardcoded (S-1) এর বদলে সঠিক slot দেখাবে
                     for uid in matched_users:
                         try:
                             session = get_session(int(uid))
@@ -503,10 +473,6 @@ async def poll_otps(context):
                                 f"📱 Phone : `{safe_full_number}`\n"
                                 f"⏰ {safe_dt2}"
                             )
-
-                            if "sms_cache" not in context.bot_data:
-                                context.bot_data["sms_cache"] = {}
-                            context.bot_data["sms_cache"][cache_key] = message
 
                             await context.bot.send_message(
                                 chat_id=int(uid),
@@ -629,18 +595,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
 
-    # ── Copy SMS ──
+    # ── FIX 2: Full SMS copy ──
+    # আগে cache_key তে colon ছিল, callback_data split হয়ে যেত।
+    # এখন sms_id (safe key) দিয়ে সরাসরি lookup করছি।
     if data.startswith("copysms:"):
-        cache_key = data[len("copysms:"):]
+        sms_id = data[len("copysms:"):]
         sms_cache = context.bot_data.get("sms_cache", {})
-        sms_text = sms_cache.get(cache_key, "SMS not available")
-        await query.answer(sms_text[:200], show_alert=True)
+        sms_text = sms_cache.get(sms_id, "")
+        if sms_text:
+            # নতুন message পাঠাও যাতে user সহজে copy করতে পারে
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"📩 *Full SMS:*\n\n`{sms_text}`",
+                parse_mode="Markdown"
+            )
+        else:
+            await query.answer("❌ SMS not available", show_alert=True)
         return
 
-    # ── Copy OTP ──
+    # ── FIX 3: OTP copy ──
+    # নতুন message পাঠাও monospace format এ — tap করলেই copy হবে
     if data.startswith("copyotp:"):
         otp = data[len("copyotp:"):]
-        await query.answer(f"OTP: {otp}", show_alert=True)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"🔐 *OTP Code:*\n\n`{otp}`",
+            parse_mode="Markdown"
+        )
         return
 
     if data.startswith("getcountry:"):
@@ -655,8 +636,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_label = escape_mdv2(label)
         safe_number = escape_mdv2(number)
 
+        # FIX 4: Number copy button — show_alert=True দিয়ে popup এ দেখাবে
+        # Telegram এ এটাই সবচেয়ে reliable copy method
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"📋 +{number}", callback_data=f"copynum:{number}")],
+            [InlineKeyboardButton(f"📋 Copy Number", callback_data=f"copynum:{number}")],
             [
                 InlineKeyboardButton("🌍 Change Country", callback_data="changecountry"),
                 InlineKeyboardButton("👁 View OTP", url=OTP_CHANNEL_LINK),
@@ -672,9 +655,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard
         )
 
+    # FIX 4: copynum — show_alert=True এ number দেখাবে + নতুন message পাঠাবে
     elif data.startswith("copynum:"):
         number = data[len("copynum:"):]
-        await query.answer(f"+{number}", show_alert=True)
+        await query.answer(f"📋 +{number}", show_alert=True)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"📱 *Your Number:*\n\n`+{number}`",
+            parse_mode="Markdown"
+        )
 
     elif data.startswith("change:"):
         pool_key = data.split(":", 1)[1]
@@ -692,7 +681,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_number = escape_mdv2(number)
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"📋 +{number}", callback_data=f"copynum:{number}")],
+            [InlineKeyboardButton(f"📋 Copy Number", callback_data=f"copynum:{number}")],
             [
                 InlineKeyboardButton("🌍 Change Country", callback_data="changecountry"),
                 InlineKeyboardButton("👁 View OTP", url=OTP_CHANNEL_LINK),
@@ -768,10 +757,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚙️ *Settings*\n\nComing soon...", parse_mode="Markdown")
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    FIX: pending_broadcast flag না থাকলে সাথে সাথে return করো।
-    এটা না থাকলে admin এর সব text message broadcast হয়ে যেত।
-    """
     if update.effective_user.id != ADMIN_ID:
         return
     if not context.bot_data.get("pending_broadcast"):
@@ -862,8 +847,6 @@ def main():
         filters.TEXT & filters.Regex(r'^(📲 Get Number|📋 Active Numbers|👑 Admin Panel)$'),
         reply_keyboard_handler
     ))
-    # FIX: handle_broadcast শুধু ADMIN এর TEXT handle করে,
-    # কিন্তু reply keyboard buttons আগেই match হয়ে যায় — তাই এটা safe
     app.add_handler(MessageHandler(
         filters.TEXT & filters.User(ADMIN_ID) & ~filters.COMMAND,
         handle_broadcast
