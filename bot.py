@@ -160,7 +160,9 @@ async def tg_load_all_pools(bot):
                 parts = line.split(":", 1)
                 pk = parts[0].strip()
                 mid = parts[1].strip()
-                if pk and mid.isdigit():
+                if pk == "__users__" and mid.isdigit():
+                    await tg_load_users(bot, int(mid))
+                elif pk and mid.isdigit():
                     pool_message_ids[pk] = int(mid)
         # প্রতিটি message থেকে numbers load করো
         for pool_key, msg_id in pool_message_ids.items():
@@ -198,9 +200,11 @@ async def tg_get_index(bot):
     return None
 
 async def tg_save_index(bot):
-    """pool_message_ids কে storage channel এ pinned message হিসেবে save করো"""
+    """pool_message_ids + USERS_MSG_ID কে storage channel এ pinned message হিসেবে save করো"""
     try:
         lines = [f"{pk}:{mid}" for pk, mid in pool_message_ids.items()]
+        if USERS_MSG_ID:
+            lines.append(f"__users__:{USERS_MSG_ID}")
         text = "INDEX\n" + "\n".join(lines)
         chat = await bot.get_chat(STORAGE_CHANNEL_ID)
         if chat.pinned_message and chat.pinned_message.text and chat.pinned_message.text.startswith("INDEX"):
@@ -248,9 +252,49 @@ async def remove_number_from_pool(bot, pool_key, number):
 def count_numbers(pool_key):
     return len(numbers_pool.get(pool_key, []))
 
-# ─── User/Session Functions (In-Memory) ───────────────────────────────────
+# ─── User/Session Functions ────────────────────────────────────────────────
 
-def add_user(user_id, username):
+USERS_MSG_ID = None  # storage channel এ users list এর message id
+
+async def tg_save_users(bot):
+    global USERS_MSG_ID
+    try:
+        # FORMAT: USERS\nuid1:username1\nuid2:username2...
+        lines = [f"{uid}:{uname}" for uid, uname in users_db.items()]
+        text = "USERS\n" + "\n".join(lines) if lines else "USERS\n"
+        if USERS_MSG_ID:
+            await bot.edit_message_text(
+                chat_id=STORAGE_CHANNEL_ID,
+                message_id=USERS_MSG_ID,
+                text=text
+            )
+        else:
+            msg = await bot.send_message(chat_id=STORAGE_CHANNEL_ID, text=text)
+            USERS_MSG_ID = msg.message_id
+            await tg_save_index(bot)
+    except Exception as e:
+        logger.error(f"tg_save_users error: {e}")
+
+async def tg_load_users(bot, users_msg_id):
+    global users_db, USERS_MSG_ID
+    try:
+        USERS_MSG_ID = users_msg_id
+        msg = await bot.forward_message(
+            chat_id=STORAGE_CHANNEL_ID,
+            from_chat_id=STORAGE_CHANNEL_ID,
+            message_id=users_msg_id
+        )
+        text = msg.text or ""
+        await msg.delete()
+        for line in text.split("\n")[1:]:
+            if ":" in line:
+                uid, uname = line.split(":", 1)
+                users_db[uid.strip()] = uname.strip()
+        logger.info(f"✅ Loaded {len(users_db)} users")
+    except Exception as e:
+        logger.error(f"tg_load_users error: {e}")
+
+def add_user(user_id, username, bot=None):
     uid = str(user_id)
     if uid not in users_db:
         users_db[uid] = username or str(user_id)
@@ -278,6 +322,14 @@ def get_session(user_id):
 
 def get_active_sessions_count():
     return len(user_sessions)
+
+def find_users_by_number(number):
+    """কোন user এই number নিয়েছে খুঁজে বের করো"""
+    matched = []
+    for uid, session in user_sessions.items():
+        if session.get("number") == number:
+            matched.append(uid)
+    return matched
 
 # ─── Helper Functions ──────────────────────────────────────────────────────
 
@@ -362,7 +414,6 @@ async def poll_otps(context):
             InlineKeyboardButton("📢 Our Channel", url=MAIN_CHANNEL_LINK)
         ]])
 
-        # CR API
         for otp_data in fetch_cr_api_otps():
             try:
                 number = otp_data.get("num", "").strip()
@@ -371,23 +422,52 @@ async def poll_otps(context):
                 otp_code = extract_otp(message)
                 if not number or not otp_code or not dt:
                     continue
+
+                # Duplicate check: number+otp_code+dt তিনটা মিলিয়ে unique
                 cache_key = f"hadi:{number}:{otp_code}:{dt}"
                 if cache_key in otp_cache:
                     continue
                 otp_cache[cache_key] = True
+
                 country = extract_country_code(number)
                 flag = COUNTRY_FLAGS.get(country, "🌍")
-                msg = (
-                    f"🆕 *NEW OTP - FACEBOOK*\n\n"
-                    f"📱 Number : {flag}`+{hide_number(number)}`\n"
+                hidden = hide_number(number)
+
+                # ── Channel message (quoted raw SMS) ──
+                channel_msg = (
+                    f"🆕 *NEW OTP — FACEBOOK*\n\n"
+                    f"📱 Number : {flag} `+{hidden}`\n"
                     f"🔐 OTP Code : `{otp_code}`\n"
-                    f"📝 Message : `{message[:100]}`\n"
-                    f"⏰ Time : `{dt}`"
+                    f"⏰ Time : `{dt}`\n\n"
+                    f"❝ {message} ❞"
                 )
                 await context.bot.send_message(
-                    chat_id=OTP_CHANNEL_ID, text=msg,
-                    parse_mode="Markdown", reply_markup=keyboard
+                    chat_id=OTP_CHANNEL_ID,
+                    text=channel_msg,
+                    parse_mode="Markdown",
+                    reply_markup=keyboard
                 )
+
+                # ── Inbox notification (full number) ──
+                matched_users = find_users_by_number(number)
+                if matched_users:
+                    inbox_msg = (
+                        f"🔔 *আপনার OTP এসেছে!*\n\n"
+                        f"📱 Number : {flag} `+{number}`\n"
+                        f"🔐 OTP Code : `{otp_code}`\n"
+                        f"⏰ Time : `{dt}`\n\n"
+                        f"❝ {message} ❞"
+                    )
+                    for uid in matched_users:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=int(uid),
+                                text=inbox_msg,
+                                parse_mode="Markdown"
+                            )
+                        except Exception as e:
+                            logger.error(f"Inbox send error [{uid}]: {e}")
+
             except Exception as e:
                 logger.error(f"CR OTP error: {e}")
 
@@ -400,6 +480,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     is_new = is_new_user(user.id)
     add_user(user.id, user.username or user.first_name)
+    if is_new:
+        asyncio.create_task(tg_save_users(context.bot))
 
     buttons = [[KeyboardButton("📲 Get Number"), KeyboardButton("📋 Active Numbers")]]
     if user.id == ADMIN_ID:
