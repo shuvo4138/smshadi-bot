@@ -26,6 +26,9 @@ JOIN_CHANNEL_LINK = f"https://t.me/{JOIN_CHANNEL_USERNAME}"
 MAIN_CHANNEL_LINK = "https://t.me/alwaysrvice24hours"
 STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "-1003671562242").strip())
 
+# FIX #4: আলাদা Users Channel
+USERS_CHANNEL_ID = int(os.getenv("USERS_CHANNEL_ID", "-1003846215757").strip())
+
 # CR API
 CR_API_URL = "http://147.135.212.197/crapi/had/viewstats"
 CR_API_TOKEN = os.getenv("CR_API_TOKEN", "SVJWSTRSQn6HYmlIa19oRmGQZYNjZWuKXlGHWoZOV3mGbmFVV3B5").strip()
@@ -37,6 +40,7 @@ users_db = {}
 otp_cache = {}
 
 STORAGE_MSG_IDS = {}
+USERS_MSG_IDS = {}
 
 # ─── Country Data ──────────────────────────────────────────────────────────
 COUNTRY_FLAGS = {
@@ -122,7 +126,7 @@ def escape_mdv2(text):
 
 escape_markdown = escape_mdv2
 
-# ─── Telegram Storage ──────────────────────────────────────────────────────
+# ─── Telegram Storage (Numbers — Railway STORAGE_CHANNEL_ID) ──────────────
 
 async def _save_numbers(bot):
     global STORAGE_MSG_IDS
@@ -142,25 +146,8 @@ async def _save_numbers(bot):
     except Exception as e:
         logger.error(f"_save_numbers error: {e}")
 
-async def _save_users(bot):
-    global STORAGE_MSG_IDS
-    try:
-        text = "USERS_DB_V2\n" + json.dumps(users_db, ensure_ascii=False)
-        mid = STORAGE_MSG_IDS.get("users_msg_id")
-        if mid:
-            try:
-                await bot.edit_message_text(chat_id=STORAGE_CHANNEL_ID, message_id=mid, text=text[:4096])
-                await _save_index(bot)
-                return
-            except Exception:
-                pass
-        msg = await bot.send_message(chat_id=STORAGE_CHANNEL_ID, text=text[:4096])
-        STORAGE_MSG_IDS["users_msg_id"] = msg.message_id
-        await _save_index(bot)
-    except Exception as e:
-        logger.error(f"_save_users error: {e}")
-
 async def _save_index(bot):
+    """Numbers index — STORAGE_CHANNEL_ID তে pinned"""
     try:
         text = "BOT_INDEX_V2\n" + json.dumps(STORAGE_MSG_IDS, ensure_ascii=False)
         chat = await bot.get_chat(STORAGE_CHANNEL_ID)
@@ -173,44 +160,98 @@ async def _save_index(bot):
     except Exception as e:
         logger.error(f"_save_index error: {e}")
 
+# ─── Telegram Storage (Users — USERS_CHANNEL_ID) ──────────────────────────
+# FIX #4: Users আলাদা channel এ save/load হবে
+
+async def _save_users(bot):
+    global USERS_MSG_IDS
+    try:
+        text = "USERS_DB_V2\n" + json.dumps(users_db, ensure_ascii=False)
+        mid = USERS_MSG_IDS.get("users_msg_id")
+        if mid:
+            try:
+                await bot.edit_message_text(chat_id=USERS_CHANNEL_ID, message_id=mid, text=text[:4096])
+                await _save_users_index(bot)
+                return
+            except Exception:
+                pass
+        msg = await bot.send_message(chat_id=USERS_CHANNEL_ID, text=text[:4096])
+        USERS_MSG_IDS["users_msg_id"] = msg.message_id
+        await _save_users_index(bot)
+    except Exception as e:
+        logger.error(f"_save_users error: {e}")
+
+async def _save_users_index(bot):
+    """Users index — USERS_CHANNEL_ID তে pinned"""
+    try:
+        text = "USERS_INDEX_V2\n" + json.dumps(USERS_MSG_IDS, ensure_ascii=False)
+        chat = await bot.get_chat(USERS_CHANNEL_ID)
+        pinned = chat.pinned_message
+        if pinned and pinned.text and pinned.text.startswith("USERS_INDEX_V2"):
+            await bot.edit_message_text(chat_id=USERS_CHANNEL_ID, message_id=pinned.message_id, text=text)
+        else:
+            msg = await bot.send_message(chat_id=USERS_CHANNEL_ID, text=text)
+            await bot.pin_chat_message(chat_id=USERS_CHANNEL_ID, message_id=msg.message_id, disable_notification=True)
+    except Exception as e:
+        logger.error(f"_save_users_index error: {e}")
+
+# ─── Load All Data ─────────────────────────────────────────────────────────
+
 async def tg_load_all(bot):
-    global numbers_pool, users_db, STORAGE_MSG_IDS
+    global numbers_pool, users_db, STORAGE_MSG_IDS, USERS_MSG_IDS
+
+    # ── Numbers load (STORAGE_CHANNEL_ID) ──
+    # FIX #7: Numbers ঠিকমতো load হচ্ছিল না
     try:
         chat = await bot.get_chat(STORAGE_CHANNEL_ID)
         pinned = chat.pinned_message
         if not pinned or not pinned.text or not pinned.text.startswith("BOT_INDEX_V2"):
-            logger.warning("⚠️ No BOT_INDEX_V2 pinned message found. Fresh start.")
-            return
-        index_json = pinned.text[len("BOT_INDEX_V2\n"):]
-        STORAGE_MSG_IDS = json.loads(index_json)
-        logger.info(f"✅ Index loaded: {STORAGE_MSG_IDS}")
+            logger.warning("⚠️ No BOT_INDEX_V2 pinned message found in storage channel. Fresh start.")
+        else:
+            index_json = pinned.text[len("BOT_INDEX_V2\n"):]
+            STORAGE_MSG_IDS = json.loads(index_json)
+            logger.info(f"✅ Numbers index loaded: {STORAGE_MSG_IDS}")
 
-        numbers_mid = STORAGE_MSG_IDS.get("numbers_msg_id")
-        if numbers_mid:
-            try:
-                fwd = await bot.forward_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=STORAGE_CHANNEL_ID, message_id=numbers_mid)
-                text = fwd.text or ""
-                await fwd.delete()
-                if text.startswith("NUMBERS_POOL_V2\n"):
-                    numbers_pool = json.loads(text[len("NUMBERS_POOL_V2\n"):])
-                    total = sum(len(v) for v in numbers_pool.values())
-                    logger.info(f"✅ Numbers loaded: {len(numbers_pool)} pools, {total} numbers")
-            except Exception as e:
-                logger.error(f"Numbers load error: {e}")
-
-        users_mid = STORAGE_MSG_IDS.get("users_msg_id")
-        if users_mid:
-            try:
-                fwd = await bot.forward_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=STORAGE_CHANNEL_ID, message_id=users_mid)
-                text = fwd.text or ""
-                await fwd.delete()
-                if text.startswith("USERS_DB_V2\n"):
-                    users_db = json.loads(text[len("USERS_DB_V2\n"):])
-                    logger.info(f"✅ Users loaded: {len(users_db)} users")
-            except Exception as e:
-                logger.error(f"Users load error: {e}")
+            numbers_mid = STORAGE_MSG_IDS.get("numbers_msg_id")
+            if numbers_mid:
+                try:
+                    fwd = await bot.forward_message(chat_id=STORAGE_CHANNEL_ID, from_chat_id=STORAGE_CHANNEL_ID, message_id=numbers_mid)
+                    text = fwd.text or ""
+                    await fwd.delete()
+                    if text.startswith("NUMBERS_POOL_V2\n"):
+                        numbers_pool = json.loads(text[len("NUMBERS_POOL_V2\n"):])
+                        total = sum(len(v) for v in numbers_pool.values())
+                        logger.info(f"✅ Numbers loaded: {len(numbers_pool)} pools, {total} numbers")
+                except Exception as e:
+                    logger.error(f"Numbers load error: {e}")
     except Exception as e:
-        logger.error(f"tg_load_all error: {e}")
+        logger.error(f"tg_load_all (numbers) error: {e}")
+
+    # ── Users load (USERS_CHANNEL_ID) ──
+    # FIX #4: Users আলাদা channel থেকে load
+    try:
+        chat = await bot.get_chat(USERS_CHANNEL_ID)
+        pinned = chat.pinned_message
+        if not pinned or not pinned.text or not pinned.text.startswith("USERS_INDEX_V2"):
+            logger.warning("⚠️ No USERS_INDEX_V2 pinned message found in users channel. Fresh start.")
+        else:
+            index_json = pinned.text[len("USERS_INDEX_V2\n"):]
+            USERS_MSG_IDS = json.loads(index_json)
+            logger.info(f"✅ Users index loaded: {USERS_MSG_IDS}")
+
+            users_mid = USERS_MSG_IDS.get("users_msg_id")
+            if users_mid:
+                try:
+                    fwd = await bot.forward_message(chat_id=USERS_CHANNEL_ID, from_chat_id=USERS_CHANNEL_ID, message_id=users_mid)
+                    text = fwd.text or ""
+                    await fwd.delete()
+                    if text.startswith("USERS_DB_V2\n"):
+                        users_db = json.loads(text[len("USERS_DB_V2\n"):])
+                        logger.info(f"✅ Users loaded: {len(users_db)} users")
+                except Exception as e:
+                    logger.error(f"Users load error: {e}")
+    except Exception as e:
+        logger.error(f"tg_load_all (users) error: {e}")
 
 # ─── Pool Helper Functions ─────────────────────────────────────────────────
 
@@ -333,11 +374,8 @@ def hide_number(number):
     return number[:-5] + "★★" + number[-3:]
 
 # ─── SMS Cache Key Helper ──────────────────────────────────────────────────
-# FIX: cache_key এ colon (:) থাকে যা callback_data এ সমস্যা করে।
-# তাই আলাদা sms_id (index based) ব্যবহার করা হচ্ছে।
 
 def get_sms_id(cache_key: str) -> str:
-    """cache_key থেকে safe sms_id বানাও (colon replace করো)"""
     return cache_key.replace(":", "_").replace(" ", "_")
 
 # ─── CR API ────────────────────────────────────────────────────────────────
@@ -391,6 +429,10 @@ async def poll_otps(context):
                     continue
 
                 cache_key = f"hadi:{number}:{otp_code}:{dt}"
+
+                # FIX #6: otp_cache restart এ মুছে যায়, তাই deploy এর পর পুরনো OTP
+                # আবার channel এ যায়। post_init এ preload করা হয়, তারপরও
+                # এখানে double-check করছি।
                 if cache_key in otp_cache:
                     continue
                 otp_cache[cache_key] = True
@@ -399,57 +441,36 @@ async def poll_otps(context):
                 flag = COUNTRY_FLAGS.get(country, "🌍")
                 hidden = hide_number(number)
 
-                # ── FIX 1: message সবসময় quote হিসেবে আসবে ──
-                # আগে message escape করার পর quote হারিয়ে যেত।
-                # এখন plain text fallback এ সবসময় message দেখাবে।
-
-                safe_message = escape_mdv2(message)
-                safe_otp = escape_mdv2(otp_code)
-                safe_hidden = escape_mdv2(f"+{hidden}")
-                safe_dt = escape_mdv2(dt)
-
+                # FIX #3: Channel এ OTP — MarkdownV2 না করে plain text পাঠাচ্ছি
+                # এতে quote কখনো ভাঙবে না, message সবসময় সঠিকভাবে দেখাবে
                 channel_msg = (
-                    f"🆕 *NEW OTP — FACEBOOK*\n\n"
-                    f"📱 Number : {flag} `{safe_hidden}`\n"
-                    f"🔐 OTP Code : `{safe_otp}`\n"
-                    f"⏰ Time : `{safe_dt}`\n\n"
-                    f"❝ {safe_message} ❞"
+                    f"🆕 NEW OTP — FACEBOOK\n\n"
+                    f"📱 Number : {flag} +{hidden}\n"
+                    f"🔐 OTP Code : {otp_code}\n"
+                    f"⏰ Time : {dt}\n\n"
+                    f"❝ {message} ❞"
                 )
                 try:
                     await context.bot.send_message(
                         chat_id=OTP_CHANNEL_ID,
                         text=channel_msg,
-                        parse_mode="MarkdownV2",
                         reply_markup=channel_keyboard
                     )
                 except Exception as e:
-                    logger.warning(f"Channel MarkdownV2 failed, plain fallback: {e}")
-                    # FIX 1: plain fallback এও message quote দেখাচ্ছে
-                    plain_msg = (
-                        f"🆕 NEW OTP — FACEBOOK\n\n"
-                        f"📱 Number : {flag} +{hidden}\n"
-                        f"🔐 OTP Code : {otp_code}\n"
-                        f"⏰ Time : {dt}\n\n"
-                        f"❝ {message} ❞"
-                    )
-                    await context.bot.send_message(
-                        chat_id=OTP_CHANNEL_ID,
-                        text=plain_msg,
-                        reply_markup=channel_keyboard
-                    )
+                    logger.warning(f"Channel send failed: {e}")
 
                 # ── Inbox notification ──
                 matched_users = find_users_by_number(number)
                 if matched_users:
-                    # FIX 2 & 3: sms_id safe key ব্যবহার করছি callback_data তে
                     sms_id = get_sms_id(cache_key)
 
-                    # sms_cache এ store করো
                     if "sms_cache" not in context.bot_data:
                         context.bot_data["sms_cache"] = {}
                     context.bot_data["sms_cache"][sms_id] = message
 
-                    # FIX 3: OTP copy button এ otp_code directly দিচ্ছি
+                    # FIX #2: Full SMS ও OTP — নিচে extra message আসবে না।
+                    # শুধু show_alert=True popup এ দেখাবে।
+                    # OTP button এ otp_code দিচ্ছি, SMS button এ sms_id।
                     inbox_keyboard = InlineKeyboardMarkup([
                         [
                             InlineKeyboardButton("📋 Full SMS", callback_data=f"copysms:{sms_id}"),
@@ -463,21 +484,16 @@ async def poll_otps(context):
                             pool_key = session.get("pool_key", "") if session else ""
                             inbox_label = get_short_label(pool_key) if pool_key else f"{flag} Facebook"
 
-                            safe_label = escape_mdv2(inbox_label)
-                            safe_full_number = escape_mdv2(f"+{number}")
-                            safe_dt2 = escape_mdv2(dt)
-
                             inbox_msg = (
-                                f"🔔 *OTP এসেছে\!*\n\n"
-                                f"*{safe_label}* 🟢\n"
-                                f"📱 Phone : `{safe_full_number}`\n"
-                                f"⏰ {safe_dt2}"
+                                f"🔔 OTP এসেছে!\n\n"
+                                f"{inbox_label} 🟢\n"
+                                f"📱 Phone : +{number}\n"
+                                f"⏰ {dt}"
                             )
 
                             await context.bot.send_message(
                                 chat_id=int(uid),
                                 text=inbox_msg,
-                                parse_mode="MarkdownV2",
                                 reply_markup=inbox_keyboard
                             )
                         except Exception as e:
@@ -554,8 +570,6 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
             number = session['number']
             pool_key = session['pool_key']
             label = get_short_label(pool_key)
-            safe_label = escape_mdv2(label)
-            safe_number = escape_mdv2(f"+{number}")
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Change Numbers", callback_data=f"change:{pool_key}")],
                 [
@@ -565,8 +579,8 @@ async def reply_keyboard_handler(update: Update, context: ContextTypes.DEFAULT_T
             ])
             await update.message.reply_text(
                 f"📱 *Your Active Number:*\n\n"
-                f"*{safe_label}* Numbers Assigned:\n\n"
-                f"Number : `{safe_number}`\n\n"
+                f"*{label}* Numbers Assigned:\n\n"
+                f"Number : `+{number}`\n\n"
                 f"⏳ Please wait while we retrieve your OTP\\.\\.\\.\n"
                 f"_If not received, click View OTP and check in the group\\._",
                 parse_mode="MarkdownV2",
@@ -595,33 +609,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
 
-    # ── FIX 2: Full SMS copy ──
-    # আগে cache_key তে colon ছিল, callback_data split হয়ে যেত।
-    # এখন sms_id (safe key) দিয়ে সরাসরি lookup করছি।
+    # FIX #2: Full SMS copy — শুধু popup এ দেখাবে, নিচে কোনো message নেই
     if data.startswith("copysms:"):
         sms_id = data[len("copysms:"):]
         sms_cache = context.bot_data.get("sms_cache", {})
         sms_text = sms_cache.get(sms_id, "")
         if sms_text:
-            # নতুন message পাঠাও যাতে user সহজে copy করতে পারে
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=f"📩 *Full SMS:*\n\n`{sms_text}`",
-                parse_mode="Markdown"
-            )
+            await query.answer(sms_text[:200], show_alert=True)
         else:
             await query.answer("❌ SMS not available", show_alert=True)
         return
 
-    # ── FIX 3: OTP copy ──
-    # নতুন message পাঠাও monospace format এ — tap করলেই copy হবে
+    # FIX #2: OTP copy — শুধু popup এ দেখাবে, নিচে কোনো message নেই
     if data.startswith("copyotp:"):
         otp = data[len("copyotp:"):]
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=f"🔐 *OTP Code:*\n\n`{otp}`",
-            parse_mode="Markdown"
-        )
+        await query.answer(f"🔐 OTP: {otp}", show_alert=True)
         return
 
     if data.startswith("getcountry:"):
@@ -636,8 +638,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_label = escape_mdv2(label)
         safe_number = escape_mdv2(number)
 
-        # FIX 4: Number copy button — show_alert=True দিয়ে popup এ দেখাবে
-        # Telegram এ এটাই সবচেয়ে reliable copy method
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"📋 Copy Number", callback_data=f"copynum:{number}")],
             [
@@ -655,15 +655,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard
         )
 
-    # FIX 4: copynum — show_alert=True এ number দেখাবে + নতুন message পাঠাবে
+    # FIX #1: Copy Number — শুধু popup এ দেখাবে, নিচে কোনো extra message নেই
     elif data.startswith("copynum:"):
         number = data[len("copynum:"):]
         await query.answer(f"📋 +{number}", show_alert=True)
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=f"📱 *Your Number:*\n\n`+{number}`",
-            parse_mode="Markdown"
-        )
 
     elif data.startswith("change:"):
         pool_key = data.split(":", 1)[1]
@@ -817,7 +812,10 @@ async def post_init(app):
     await tg_load_all(app.bot)
     logger.info(f"✅ Loaded {len(numbers_pool)} pools, {sum(len(v) for v in numbers_pool.values())} numbers, {len(users_db)} users")
 
+    # FIX #6: Deploy এর পর পুরনো OTP গুলো cache এ preload করছি
+    # এতে পুরনো OTP আর channel এ যাবে না
     otps = fetch_cr_api_otps()
+    preloaded = 0
     for otp_data in otps:
         try:
             number = otp_data.get("num", "").strip()
@@ -826,9 +824,10 @@ async def post_init(app):
             otp_code = extract_otp(message)
             if number and otp_code and dt:
                 otp_cache[f"hadi:{number}:{otp_code}:{dt}"] = True
+                preloaded += 1
         except:
             pass
-    logger.info(f"✅ Preloaded {len(otp_cache)} OTPs into cache")
+    logger.info(f"✅ Preloaded {preloaded} OTPs into cache — old OTPs will NOT be re-sent")
 
 def main():
     logger.info("🚀 Starting NUMBER PANEL NGN Bot...")
